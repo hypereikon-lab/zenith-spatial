@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noImplicitAny": true,
+    "strictNullChecks": true
+  },
+  "files": [
+    "src/projection.ts",
+    "src/geometry/fisheye-projection.ts",
+    "src/geometry/cave-projection.ts",
+    "src/plates/plate-placement.ts",
+    "src/geometry/flat-domemaster.ts",
+    "src/geometry/dome-view.ts",
+    "src/geometry/plate-screen-controls.ts"
+  ],
+  "include": []
+}

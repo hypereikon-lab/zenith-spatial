@@ -32,6 +32,7 @@ import { useEffectRunner, useWorkbenchSnapshot } from "../runtime-bridge.js";
 import { useMediaUrl } from "../use-media-url.js";
 import { ProjectionCameraControls } from "../projection-camera-controls.js";
 import { AudienceInSpaceControls, AudienceViewportHud } from "../audience-in-space-controls.js";
+import { ImmersivePreviewPanel } from "../immersive-preview.js";
 
 type ReviewTarget =
   | { readonly kind: "commit"; readonly value: PlateCommit }
@@ -542,6 +543,12 @@ export function ReviewRoom() {
               </div>
             </>
           )}
+          <ImmersivePreviewPanel
+            mediaUrl={mediaUrl}
+            spec={spec}
+            audience={audience}
+            label={target?.value.label ?? "Spatial image"}
+          />
           {target && spec ? (
             <div className="panel-section">
               <h3>Pinned metadata</h3>

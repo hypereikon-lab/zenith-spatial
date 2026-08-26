@@ -1818,6 +1818,218 @@ input[type="range"] {
   padding-bottom: 7px;
 }
 
+.immersive-preview-panel {
+  display: grid;
+  gap: 9px;
+  background: linear-gradient(180deg, rgba(22, 31, 35, 0.78), rgba(13, 16, 18, 0.92));
+}
+
+.immersive-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 9px;
+}
+
+.immersive-heading h3 {
+  margin-bottom: 3px;
+  color: var(--cyan);
+}
+
+.immersive-heading p,
+.immersive-support-readout,
+.immersive-metric-readout {
+  margin: 0;
+  color: var(--muted);
+  font:
+    500 8px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  line-height: 1.45;
+}
+
+.xr-security {
+  padding: 3px 5px;
+  border: 1px solid #674b35;
+  color: var(--amber);
+  font:
+    700 7px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.08em;
+}
+
+.xr-security.is-ready {
+  border-color: #37554b;
+  color: var(--green);
+}
+
+.immersive-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.immersive-mode {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 34px;
+  align-items: center;
+  padding: 0 9px;
+  border: 1px solid #354047;
+  border-radius: 2px;
+  background: #111619;
+  color: #cfd4d5;
+  text-align: left;
+}
+
+.immersive-mode:hover:not(:disabled),
+.immersive-mode.is-active {
+  border-color: #56808a;
+  background: #18252a;
+  color: var(--cyan);
+}
+
+.immersive-mode:disabled {
+  opacity: 0.46;
+}
+
+.immersive-mode strong {
+  font-size: 9px;
+}
+
+.immersive-mode small {
+  color: var(--muted);
+  font:
+    500 7px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.immersive-support-readout {
+  min-height: 24px;
+  padding-left: 8px;
+  border-left: 2px solid #3a5961;
+}
+
+.immersive-metric-readout {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 7px;
+  border-top: 1px solid #293137;
+}
+
+.immersive-metric-readout strong {
+  color: #bec5c6;
+}
+
+.immersive-overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  overflow: hidden;
+  visibility: hidden;
+  background: #020304;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.immersive-overlay.is-active {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.immersive-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #020304;
+  touch-action: none;
+}
+
+.immersive-overlay-chrome {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(240px, 2fr) auto;
+  align-items: center;
+  align-self: start;
+  gap: 16px;
+  min-height: 58px;
+  padding: max(9px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 9px
+    max(12px, env(safe-area-inset-left));
+  border-bottom: 1px solid rgba(117, 215, 229, 0.24);
+  background: linear-gradient(180deg, rgba(8, 11, 13, 0.94), rgba(8, 11, 13, 0.68));
+  backdrop-filter: blur(10px);
+}
+
+.immersive-overlay-title,
+.immersive-overlay-state {
+  display: grid;
+  gap: 3px;
+}
+
+.immersive-overlay-title span {
+  color: var(--cyan);
+  font:
+    700 8px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.12em;
+}
+
+.immersive-overlay-title strong {
+  font-size: 12px;
+}
+
+.immersive-overlay-state {
+  grid-template-columns: 8px minmax(0, 1fr) auto auto;
+  align-items: center;
+  color: #c4cacc;
+  font-size: 9px;
+}
+
+.immersive-overlay-state strong {
+  padding: 3px 5px;
+  border: 1px solid #45636a;
+  color: var(--cyan);
+  font:
+    700 7px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.immersive-overlay-actions {
+  display: flex;
+  gap: 6px;
+}
+
+@media (max-width: 680px) {
+  .immersive-overlay-chrome {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .immersive-overlay-state {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .immersive-overlay-actions .button {
+    min-height: 34px;
+    padding: 0 9px;
+  }
+}
+
 .app-footer {
   justify-content: space-between;
   border-bottom: 0;

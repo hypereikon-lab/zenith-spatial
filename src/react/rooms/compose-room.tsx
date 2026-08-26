@@ -3,6 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { selectedComposition } from "../../domain/project.js";
 import type { PlateDraft } from "../../domain/schema.js";
 import {
+  audienceCameraForProjection,
+  audienceFromProjectionCamera,
+  normalizeAudienceInSpace,
+  walkAudienceInSpace,
+} from "../../geometry/audience-in-space.js";
+import {
   beginProjectionCameraDrag,
   projectionCameraPointerModifiers,
   updateProjectionCameraDrag,
@@ -67,6 +73,7 @@ import {
 } from "../../runtime/browser-workbench-commands.js";
 import { updateWorkspace } from "../../runtime/workspace-commands.js";
 import { CarrierFieldAnchors } from "../carrier-field-anchors.js";
+import { AudienceInSpaceControls, AudienceViewportHud } from "../audience-in-space-controls.js";
 import { ProjectionCameraControls } from "../projection-camera-controls.js";
 import { useEffectRunner, useRuntime, useWorkbenchSnapshot } from "../runtime-bridge.js";
 
@@ -117,7 +124,17 @@ export function ComposeRoom() {
   )
     ? "source-map"
     : snapshot.document.workspace.viewMode;
-  const camera = snapshot.document.workspace.camera as PlateEditorCamera;
+  const audience = useMemo(
+    () => normalizeAudienceInSpace(snapshot.document.workspace.audience, draft.projectionMode, draft.surface),
+    [draft.projectionMode, draft.surface, snapshot.document.workspace.audience],
+  );
+  const camera = useMemo(
+    () =>
+      viewMode === "audience-space"
+        ? audienceCameraForProjection(audience, draft.projectionMode, draft.surface)
+        : (snapshot.document.workspace.camera as PlateEditorCamera),
+    [audience, draft.projectionMode, draft.surface, snapshot.document.workspace.camera, viewMode],
+  );
 
   const reportError = useCallback(
     (error: unknown, scope = "compose") => {
@@ -570,6 +587,20 @@ export function ComposeRoom() {
   function handleWheel(event: React.WheelEvent<HTMLCanvasElement>) {
     if (viewMode === "source-map") return;
     event.preventDefault();
+    if (viewMode === "audience-space") {
+      const distanceMeters = clamp((-event.deltaY / 120) * 0.4, -1.5, 1.5);
+      void run(
+        updateWorkspace((workspace) => {
+          workspace.audience = walkAudienceInSpace(
+            workspace.audience,
+            distanceMeters,
+            draft.projectionMode,
+            draft.surface,
+          );
+        }),
+      ).catch((error: unknown) => reportError(error, "audience-space"));
+      return;
+    }
     setCamera(
       updateProjectionCameraWheel({
         viewMode,
@@ -583,6 +614,15 @@ export function ComposeRoom() {
   function setCamera(next: PlateEditorCamera) {
     void run(
       updateWorkspace((workspace) => {
+        if (viewMode === "audience-space") {
+          workspace.audience = audienceFromProjectionCamera(
+            next,
+            workspace.audience,
+            draft.projectionMode,
+            draft.surface,
+          );
+          return;
+        }
         workspace.camera = {
           position: [...next.position],
           orientation: [...next.orientation],
@@ -601,7 +641,7 @@ export function ComposeRoom() {
     void run(
       updateWorkspace((workspace) => {
         workspace.viewMode = next;
-        if (next !== "source-map") {
+        if (next !== "source-map" && next !== "audience-space") {
           const reset = defaultPlateEditorCamera(draft.projectionMode, draft.surface);
           workspace.camera = {
             position: [...reset.position],
@@ -810,13 +850,28 @@ export function ComposeRoom() {
                   Invert mask
                 </label>
               </div>
-              <ProjectionCameraControls
-                viewMode={viewMode}
-                camera={camera}
-                projectionMode={draft.projectionMode}
-                surface={draft.surface}
-                onChange={setCamera}
-              />
+              {viewMode === "audience-space" ? (
+                <AudienceInSpaceControls
+                  audience={audience}
+                  projectionMode={draft.projectionMode}
+                  surface={draft.surface}
+                  onChange={(next) =>
+                    void run(
+                      updateWorkspace((workspace) => {
+                        workspace.audience = next;
+                      }),
+                    ).catch((error: unknown) => reportError(error, "audience-space"))
+                  }
+                />
+              ) : (
+                <ProjectionCameraControls
+                  viewMode={viewMode}
+                  camera={camera}
+                  projectionMode={draft.projectionMode}
+                  surface={draft.surface}
+                  onChange={setCamera}
+                />
+              )}
             </>
           ) : null}
         </div>
@@ -911,6 +966,9 @@ export function ComposeRoom() {
                 )}
               </div>
             ) : null}
+            {viewMode === "audience-space" ? (
+              <AudienceViewportHud audience={audience} projectionMode={draft.projectionMode} surface={draft.surface} />
+            ) : null}
             {plates.length === 0 ? (
               <button className="empty-viewport" type="button" onClick={() => plateInput.current?.click()}>
                 <strong>Drop source images</strong>
@@ -926,7 +984,9 @@ export function ComposeRoom() {
           <span>
             {viewMode === "source-map"
               ? "Drag plates · handles scale/warp · top handle rotates"
-              : "Drag horizon handles · empty space orbits · wheel dollies"}
+              : viewMode === "audience-space"
+                ? "Drag to look · wheel walks · position is measured in meters"
+                : "Drag horizon handles · empty space orbits · wheel dollies"}
           </span>
         </div>
       </div>
@@ -1569,6 +1629,7 @@ function viewLabel(mode: PlateEditorViewMode): string {
   if (mode === "source-map") return "Plate Map";
   if (mode === "dome-orbit") return "Dome Stage";
   if (mode === "dome-pov") return "Audience POV";
+  if (mode === "audience-space") return "Audience in Space";
   return "Volume Room";
 }
 

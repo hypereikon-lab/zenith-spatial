@@ -11,7 +11,13 @@ import type {
   PlateDraft,
   ZenithDocument,
 } from "../domain/schema.js";
-import { decodeSchemaSync, ImageSpatialSpecSchema, PlateDraftSchema, ZenithDocumentSchema } from "../domain/schema.js";
+import {
+  DEFAULT_AUDIENCE_IN_SPACE,
+  decodeSchemaSync,
+  ImageSpatialSpecSchema,
+  PlateDraftSchema,
+  ZenithDocumentSchema,
+} from "../domain/schema.js";
 import { defaultPlateEditorCamera } from "../plates/plate-editor-view.js";
 import { MediaRepository } from "./media-repository.js";
 import { WorkbenchService } from "./workbench-service.js";
@@ -293,6 +299,7 @@ async function migrateLegacyProjectSnapshot(
         oldWorkspace.viewerMode === "dome-check" || oldWorkspace.viewerMode === "rim-check"
           ? oldWorkspace.viewerMode
           : "domemaster",
+      audience: { ...DEFAULT_AUDIENCE_IN_SPACE },
       camera: {
         position: [...camera.position],
         orientation: [...camera.orientation],

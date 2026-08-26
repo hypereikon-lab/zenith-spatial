@@ -10,7 +10,7 @@ import { clamp, normalize, scaleVec3, subtract, vectorLength } from "../projecti
 import type { CameraRigMode, CameraRigPose } from "./camera-rig.js";
 import type { Point2D, Vec3 } from "../projection.js";
 
-export type ProjectionCameraViewMode = "source-map" | "dome-orbit" | "dome-pov" | "cave-room";
+export type ProjectionCameraViewMode = "source-map" | "dome-orbit" | "dome-pov" | "cave-room" | "audience-space";
 export type ProjectionCameraDragIntent = "none" | "orbit" | "look" | "pan" | "dolly";
 
 export type ProjectionCameraDragModifiers = {
@@ -169,8 +169,12 @@ export function cameraFocusDistance<Mode extends string>(pose: CameraRigPose<Mod
 
 export function projectionCameraControlHelp(viewMode: ProjectionCameraViewMode): string {
   if (viewMode === "source-map") return "Plate Map is edited in flat dome-map coordinates.";
-  const primary = viewMode === "dome-pov" ? "Drag to look from the camera." : "Drag to orbit around the pivot.";
-  return `${primary} Shift or middle-drag pans. Option or right-drag dollies. Wheel zooms the orthographic view.`;
+  const primary =
+    viewMode === "dome-pov" || viewMode === "audience-space"
+      ? "Drag to look from the camera."
+      : "Drag to orbit around the pivot.";
+  const wheel = viewMode === "audience-space" ? "Wheel walks through the venue." : "Wheel zooms the orthographic view.";
+  return `${primary} Shift or middle-drag pans. Option or right-drag dollies. ${wheel}`;
 }
 
 function panMetersPerPixel<Mode extends string>(

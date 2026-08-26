@@ -24,6 +24,7 @@ import {
   plateEditorCaveProjection,
   plateEditorDomeProjection,
   plateEditorViewDisabledReason,
+  plateEditorViewUsesSurfaceGeometry,
 } from "./plate-editor-view.js";
 import type { SourceProjectionMode } from "../geometry/source-projection.js";
 import type { ProjectionSurface } from "../lib/shared/contracts/projection-authoring.js";
@@ -75,6 +76,9 @@ export function createPlateEditorProjectionAdapter({
   if (disabledReason) {
     throw new Error(disabledReason);
   }
+  const usesSurfaceGeometry = plateEditorViewUsesSurfaceGeometry(mode, sourceProjectionMode);
+  const caveViewMode = mode === "audience-space" ? "audience-space" : "cave-room";
+  const domeViewMode = mode === "dome-pov" || mode === "audience-space" ? mode : "dome-orbit";
 
   const projectSourceDirection = (direction: Vec3): Point2D | null => {
     if (mode === "source-map") {
@@ -90,15 +94,15 @@ export function createPlateEditorProjectionAdapter({
       );
       return uv ? { x: rect.x + uv.u * rect.width, y: rect.y + uv.v * rect.height } : null;
     }
-    if (mode === "cave-room") {
+    if (usesSurfaceGeometry) {
       return sourceCaveDirectionToScreenPoint(
         direction,
-        plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface),
+        plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface, caveViewMode),
       );
     }
     return sourceDomeDirectionToScreenPoint(
       direction,
-      plateEditorDomeProjection(mode, camera, sourceProjectionMode, rect, showCaveMask),
+      plateEditorDomeProjection(domeViewMode, camera, sourceProjectionMode, rect, showCaveMask),
     );
   };
 
@@ -116,15 +120,15 @@ export function createPlateEditorProjectionAdapter({
         projectionSurface,
       );
     }
-    if (mode === "cave-room") {
+    if (usesSurfaceGeometry) {
       return sourceCaveDirectionFromScreenPoint(
         point,
-        plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface),
+        plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface, caveViewMode),
       );
     }
     return sourceDomeDirectionFromScreenPoint(
       point,
-      plateEditorDomeProjection(mode, camera, sourceProjectionMode, rect, showCaveMask),
+      plateEditorDomeProjection(domeViewMode, camera, sourceProjectionMode, rect, showCaveMask),
     );
   };
 
@@ -133,45 +137,45 @@ export function createPlateEditorProjectionAdapter({
     sourceProjectionMode,
     projectSourceDirection,
     projectPhysicalDirection(direction) {
-      if (mode === "cave-room") {
+      if (usesSurfaceGeometry) {
         return physicalCaveDirectionToScreenPoint(
           direction,
-          plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface),
+          plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface, caveViewMode),
         );
       }
       if (mode === "source-map") return null;
       return physicalDomeDirectionToScreenPoint(
         direction,
-        plateEditorDomeProjection(mode, camera, sourceProjectionMode, rect, showCaveMask),
+        plateEditorDomeProjection(domeViewMode, camera, sourceProjectionMode, rect, showCaveMask),
       );
     },
     projectPhysicalSurfacePoint(point) {
-      if (mode !== "cave-room") return null;
+      if (!usesSurfaceGeometry) return null;
       return physicalCaveSurfacePointToScreenPoint(
         point,
-        plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface),
+        plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface, caveViewMode),
       );
     },
     physicalDirectionAt(point) {
-      if (mode === "cave-room") {
+      if (usesSurfaceGeometry) {
         const surfacePoint = caveSurfacePointFromScreenPoint(
           point,
-          plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface),
+          plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface, caveViewMode),
         );
         return surfacePoint ? normalizeVec3(surfacePoint) : null;
       }
       if (mode === "source-map") return null;
       return physicalDomeDirectionFromScreenPoint(
         point,
-        plateEditorDomeProjection(mode, camera, sourceProjectionMode, rect, showCaveMask),
+        plateEditorDomeProjection(domeViewMode, camera, sourceProjectionMode, rect, showCaveMask),
       );
     },
     sourceDirectionAt,
     physicalSurfacePointAt(point) {
-      if (mode !== "cave-room") return null;
+      if (!usesSurfaceGeometry) return null;
       return caveSurfacePointFromScreenPoint(
         point,
-        plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface),
+        plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface, caveViewMode),
       );
     },
     projectPlateUv(placement, u, v) {

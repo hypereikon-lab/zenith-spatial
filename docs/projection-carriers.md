@@ -39,6 +39,8 @@ Paid image preflight decodes the committed input and returned output and require
 
 The current measured-room authoring contract is deliberately exact about the surfaces it represents: rectangular prisms, centred circular cylinders, and one extruded piecewise-planar hall shell. A general irregular polygonal room, curved freeform wall, roof varying along the extrusion axis, off-axis cylinder, projector lens, warp mesh, or blend mask still needs a calibrated surface/mesh contract; Zenith does not pretend that a few dimensions describe those venues.
 
+`Audience in Space` is a separate inspection contract. It derives a perspective camera from a movable human position in venue coordinates (`X`, `Z`, and eye height in metres), while the projection observer remains the origin used by carrier transforms. CAVE, hall, and cylinder previews use their measured dimensions directly. Angular carriers are dimensionless by definition, so the workspace supplies a physical dome radius solely for scale simulation. Moving this audience pose never rewrites the measured surface, spatial anchors, source allocation, Plate placement, commits, or pixels.
+
 ## Supported topologies
 
 ### Circular fisheye

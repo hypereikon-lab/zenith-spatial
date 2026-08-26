@@ -28,7 +28,7 @@ import type {
   Workspace,
   ZenithDocument,
 } from "./schema.js";
-import { decodeSchemaSync, ZenithDocumentSchema } from "./schema.js";
+import { DEFAULT_AUDIENCE_IN_SPACE, decodeSchemaSync, ZenithDocumentSchema } from "./schema.js";
 
 export type CompositionReadiness = {
   readonly sourceCount: number;
@@ -147,6 +147,7 @@ export function createInitialZenithDocument({
     selectedLayerId: plateDraft.frame.activeLayerId,
     viewMode: "source-map",
     viewerMode: "domemaster",
+    audience: { ...DEFAULT_AUDIENCE_IN_SPACE },
     camera: {
       position: [...camera.position],
       orientation: [...camera.orientation],

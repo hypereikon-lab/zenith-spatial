@@ -62,6 +62,26 @@ describe("projection camera quaternion controls", () => {
     ).toBeGreaterThan(0.05);
   });
 
+  test("uses first-person look behavior for Audience in Space", () => {
+    const camera: CameraRigPose<"inside"> = {
+      ...orbitCamera([0.2, 1.65, -0.4], [0.2, 1.65, 1]),
+      mode: "inside",
+      pivot: null,
+    };
+    const next = applyProjectionCameraPointerDrag({
+      viewMode: "audience-space",
+      startCamera: camera,
+      startPoint: { x: 240, y: 240 },
+      currentPoint: { x: 300, y: 210 },
+      viewport: { width: 480, height: 480 },
+    });
+
+    expect(next.position).toEqual(camera.position);
+    expect(
+      angularDistance(cameraBasisFromRigPose(next).forward, cameraBasisFromRigPose(camera).forward),
+    ).toBeGreaterThan(0.05);
+  });
+
   test("wheel dollies orbit cameras toward the pivot", () => {
     const camera = orbitCamera([0, 0, -4], [0, 0, 0]);
     const next = applyProjectionCameraWheel({

@@ -11,15 +11,17 @@ import {
   plateEditorViewDisabledReason,
   plateEditorViewLabel,
   plateEditorViewMatrix,
+  plateEditorViewUsesSurfaceGeometry,
 } from "./plate-editor-view.js";
 
 describe("plate editor projection views", () => {
   test("defines production editing view labels", () => {
-    expect(PLATE_EDITOR_VIEW_MODES).toEqual(["source-map", "dome-orbit", "dome-pov", "cave-room"]);
+    expect(PLATE_EDITOR_VIEW_MODES).toEqual(["source-map", "dome-orbit", "dome-pov", "cave-room", "audience-space"]);
     expect(plateEditorViewLabel("source-map")).toBe("Plate Map");
     expect(plateEditorViewLabel("dome-orbit")).toBe("Dome Stage");
     expect(plateEditorViewLabel("dome-pov")).toBe("Audience POV");
     expect(plateEditorViewLabel("cave-room")).toBe("Volume Room");
+    expect(plateEditorViewLabel("audience-space")).toBe("Audience in Space");
   });
 
   test("creates finite matrices for dome and CAVE views", () => {
@@ -46,6 +48,10 @@ describe("plate editor projection views", () => {
     expect(plateEditorViewDisabledReason("dome-orbit", "cylinder-nadir")).toBe(
       "Cylinder carriers are inspected in Plate Map or Volume Room.",
     );
+    expect(plateEditorViewDisabledReason("audience-space", "zenith-230")).toBeNull();
+    expect(plateEditorViewDisabledReason("audience-space", "cylinder-nadir")).toBeNull();
+    expect(plateEditorViewUsesSurfaceGeometry("audience-space", "cylinder-nadir")).toBe(true);
+    expect(plateEditorViewUsesSurfaceGeometry("audience-space", "zenith-230")).toBe(false);
   });
 
   test("normalizes camera values into a useful 6DoF editor pose", () => {
@@ -75,6 +81,23 @@ describe("plate editor projection views", () => {
     expect(Array.from(plateEditorProjectionMatrix(camera, "cave-270")).every(Number.isFinite)).toBe(true);
     expect(cave.rect).toEqual(rect);
     expect(cave.projectionMode).toBe("orthographic");
+  });
+
+  test("uses perspective projection for meter-aware audience inspection", () => {
+    const rect = { x: 0, y: 0, width: 960, height: 540 };
+    const camera = {
+      ...defaultPlateEditorCamera("cave-270"),
+      position: [0, -0.35, 0] as [number, number, number],
+      pivot: null,
+      mode: "inside" as const,
+    };
+    const projection = plateEditorCaveProjection(camera, "cave-270", rect, false, undefined, "audience-space");
+    const matrix = plateEditorProjectionMatrix(camera, "cave-270", rect.width / rect.height, "audience-space");
+
+    expect(projection.projectionMode).toBe("perspective");
+    expect(projection.orthographicViewHeight).toBeUndefined();
+    expect(matrix[11]).toBe(1);
+    expect(matrix[15]).toBe(0);
   });
 
   test("frames measured rooms instead of clipping them at the default camera distance", () => {

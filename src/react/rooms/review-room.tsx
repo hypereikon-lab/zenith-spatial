@@ -3,6 +3,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { selectedComposition, selectedImageTake, selectedPlateCommit } from "../../domain/project.js";
 import type { ImageTake, PlateCommit } from "../../domain/schema.js";
 import {
+  audienceCameraForProjection,
+  audienceFromProjectionCamera,
+  normalizeAudienceInSpace,
+  walkAudienceInSpace,
+} from "../../geometry/audience-in-space.js";
+import {
   beginProjectionCameraDrag,
   projectionCameraPointerModifiers,
   updateProjectionCameraDrag,
@@ -25,6 +31,7 @@ import { chooseImageTake, choosePlateCommit, updateWorkspace } from "../../runti
 import { useEffectRunner, useWorkbenchSnapshot } from "../runtime-bridge.js";
 import { useMediaUrl } from "../use-media-url.js";
 import { ProjectionCameraControls } from "../projection-camera-controls.js";
+import { AudienceInSpaceControls, AudienceViewportHud } from "../audience-in-space-controls.js";
 
 type ReviewTarget =
   | { readonly kind: "commit"; readonly value: PlateCommit }
@@ -79,7 +86,20 @@ export function ReviewRoom() {
     spec && plateEditorViewDisabledReason(snapshot.document.workspace.viewMode, spec.projectionMode)
       ? "source-map"
       : snapshot.document.workspace.viewMode;
-  const camera = snapshot.document.workspace.camera as PlateEditorCamera;
+  const audience = useMemo(
+    () =>
+      spec
+        ? normalizeAudienceInSpace(snapshot.document.workspace.audience, spec.projectionMode, spec.surface)
+        : snapshot.document.workspace.audience,
+    [snapshot.document.workspace.audience, spec],
+  );
+  const camera = useMemo(
+    () =>
+      viewMode === "audience-space" && spec
+        ? audienceCameraForProjection(audience, spec.projectionMode, spec.surface)
+        : (snapshot.document.workspace.camera as PlateEditorCamera),
+    [audience, snapshot.document.workspace.camera, spec, viewMode],
+  );
 
   useEffect(() => {
     if (!canvas) return;
@@ -151,7 +171,7 @@ export function ReviewRoom() {
     void run(
       updateWorkspace((workspace) => {
         workspace.viewMode = next;
-        if (next !== "source-map") {
+        if (next !== "source-map" && next !== "audience-space") {
           const reset = defaultPlateEditorCamera(spec.projectionMode, spec.surface);
           workspace.camera = {
             position: [...reset.position],
@@ -170,6 +190,15 @@ export function ReviewRoom() {
   function setCamera(next: PlateEditorCamera) {
     void run(
       updateWorkspace((workspace) => {
+        if (viewMode === "audience-space" && spec) {
+          workspace.audience = audienceFromProjectionCamera(
+            next,
+            workspace.audience,
+            spec.projectionMode,
+            spec.surface,
+          );
+          return;
+        }
         workspace.camera = {
           position: [...next.position],
           orientation: [...next.orientation],
@@ -341,34 +370,53 @@ export function ReviewRoom() {
         </div>
         <div ref={stage} className={displayMode === "pixels" ? "viewport-stage pixel-inspection" : "viewport-stage"}>
           {displayMode === "spatial" ? (
-            <canvas
-              ref={setCanvas}
-              className="review-canvas"
-              aria-label="WebGPU spatial image review"
-              tabIndex={0}
-              onPointerDown={pointerDown}
-              onPointerMove={pointerMove}
-              onPointerUp={(event) => {
-                cameraDrag.current = null;
-                if (event.currentTarget.hasPointerCapture(event.pointerId))
-                  event.currentTarget.releasePointerCapture(event.pointerId);
-              }}
-              onPointerCancel={() => {
-                cameraDrag.current = null;
-              }}
-              onWheel={(event) => {
-                if (viewMode === "source-map") return;
-                event.preventDefault();
-                setCamera(
-                  updateProjectionCameraWheel({
-                    viewMode,
-                    camera,
-                    deltaY: event.deltaY,
-                    modifiers: projectionCameraPointerModifiers(event),
-                  }) as PlateEditorCamera,
-                );
-              }}
-            />
+            <>
+              <canvas
+                ref={setCanvas}
+                className="review-canvas"
+                aria-label="WebGPU spatial image review"
+                tabIndex={0}
+                onPointerDown={pointerDown}
+                onPointerMove={pointerMove}
+                onPointerUp={(event) => {
+                  cameraDrag.current = null;
+                  if (event.currentTarget.hasPointerCapture(event.pointerId))
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                }}
+                onPointerCancel={() => {
+                  cameraDrag.current = null;
+                }}
+                onWheel={(event) => {
+                  if (viewMode === "source-map") return;
+                  event.preventDefault();
+                  if (viewMode === "audience-space" && spec) {
+                    const distanceMeters = Math.max(-1.5, Math.min(1.5, (-event.deltaY / 120) * 0.4));
+                    void run(
+                      updateWorkspace((workspace) => {
+                        workspace.audience = walkAudienceInSpace(
+                          workspace.audience,
+                          distanceMeters,
+                          spec.projectionMode,
+                          spec.surface,
+                        );
+                      }),
+                    );
+                    return;
+                  }
+                  setCamera(
+                    updateProjectionCameraWheel({
+                      viewMode,
+                      camera,
+                      deltaY: event.deltaY,
+                      modifiers: projectionCameraPointerModifiers(event),
+                    }) as PlateEditorCamera,
+                  );
+                }}
+              />
+              {viewMode === "audience-space" && spec ? (
+                <AudienceViewportHud audience={audience} projectionMode={spec.projectionMode} surface={spec.surface} />
+              ) : null}
+            </>
           ) : mediaUrl && asset ? (
             <div className="pixel-scroll">
               <img
@@ -398,7 +446,9 @@ export function ReviewRoom() {
               ? `${pixelZoom}% display scale`
               : viewMode === "source-map"
                 ? "Carrier map"
-                : "Drag to orbit · wheel to dolly"}
+                : viewMode === "audience-space"
+                  ? "Drag to look · wheel walks · position is measured in meters"
+                  : "Drag to orbit · wheel to dolly"}
           </span>
         </div>
       </div>
@@ -466,13 +516,28 @@ export function ReviewRoom() {
                   </label>
                 </div>
                 {spec ? (
-                  <ProjectionCameraControls
-                    viewMode={viewMode}
-                    camera={camera}
-                    projectionMode={spec.projectionMode}
-                    surface={spec.surface}
-                    onChange={setCamera}
-                  />
+                  viewMode === "audience-space" ? (
+                    <AudienceInSpaceControls
+                      audience={audience}
+                      projectionMode={spec.projectionMode}
+                      surface={spec.surface}
+                      onChange={(next) =>
+                        void run(
+                          updateWorkspace((workspace) => {
+                            workspace.audience = next;
+                          }),
+                        )
+                      }
+                    />
+                  ) : (
+                    <ProjectionCameraControls
+                      viewMode={viewMode}
+                      camera={camera}
+                      projectionMode={spec.projectionMode}
+                      surface={spec.surface}
+                      onChange={setCamera}
+                    />
+                  )
                 ) : null}
               </div>
             </>
@@ -537,5 +602,6 @@ function viewLabel(mode: PlateEditorViewMode): string {
   if (mode === "source-map") return "Plate Map";
   if (mode === "dome-orbit") return "Dome Stage";
   if (mode === "dome-pov") return "Audience POV";
+  if (mode === "audience-space") return "Audience in Space";
   return "Volume Room";
 }

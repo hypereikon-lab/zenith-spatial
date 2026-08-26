@@ -312,13 +312,38 @@ export const ProjectSchema = Schema.mutable(
 const vec3 = Schema.mutable(Schema.Tuple(finiteNumber, finiteNumber, finiteNumber));
 const quaternion = Schema.mutable(Schema.Tuple(finiteNumber, finiteNumber, finiteNumber, finiteNumber));
 
+export const AudienceInSpaceSchema = Schema.mutable(
+  Schema.Struct({
+    xMeters: finiteNumber,
+    zMeters: finiteNumber,
+    eyeHeightMeters: positiveNumber,
+    yawDegrees: finiteNumber,
+    pitchDegrees: finiteNumber,
+    fovDegrees: positiveNumber.pipe(Schema.between(30, 130)),
+    domeRadiusMeters: positiveNumber,
+  }),
+);
+
+export const DEFAULT_AUDIENCE_IN_SPACE = {
+  xMeters: 0,
+  zMeters: 0,
+  eyeHeightMeters: 1.65,
+  yawDegrees: 0,
+  pitchDegrees: 0,
+  fovDegrees: 82,
+  domeRadiusMeters: 7.5,
+} as const;
+
 export const WorkspaceSchema = Schema.mutable(
   Schema.Struct({
     selectedCompositionId: nonEmptyString,
     room: Schema.Literal("compose", "generate", "review"),
     selectedLayerId: Schema.NullOr(nonEmptyString),
-    viewMode: Schema.Literal("source-map", "dome-orbit", "dome-pov", "cave-room"),
+    viewMode: Schema.Literal("source-map", "dome-orbit", "dome-pov", "cave-room", "audience-space"),
     viewerMode: Schema.Literal("domemaster", "dome-check", "rim-check"),
+    audience: Schema.optionalWith(AudienceInSpaceSchema, {
+      default: () => ({ ...DEFAULT_AUDIENCE_IN_SPACE }),
+    }),
     camera: Schema.mutable(
       Schema.Struct({
         position: vec3,
@@ -480,6 +505,7 @@ export type ImageTake = Schema.Schema.Type<typeof ImageTakeSchema>;
 export type Composition = Schema.Schema.Type<typeof CompositionSchema>;
 export type Project = Schema.Schema.Type<typeof ProjectSchema>;
 export type Workspace = Schema.Schema.Type<typeof WorkspaceSchema>;
+export type AudienceInSpace = Schema.Schema.Type<typeof AudienceInSpaceSchema>;
 export type ZenithDocument = Schema.Schema.Type<typeof ZenithDocumentSchema>;
 export type GenerationSourceReference = Schema.Schema.Type<typeof GenerationSourceReferenceSchema>;
 export type GenerationInput = Schema.Schema.Type<typeof GenerationInputSchema>;

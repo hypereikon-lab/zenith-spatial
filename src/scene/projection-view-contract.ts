@@ -1,7 +1,13 @@
 import { sourceProjectionLabel, type SourceProjectionMode } from "../geometry/source-projection.js";
 
 export const SOURCE_REVIEW_VIEW_MODES = ["domemaster", "dome-check", "rim-check"] as const;
-export const SPATIAL_PROJECTION_VIEW_MODES = ["source-map", "dome-orbit", "dome-pov", "cave-room"] as const;
+export const SPATIAL_PROJECTION_VIEW_MODES = [
+  "source-map",
+  "dome-orbit",
+  "dome-pov",
+  "cave-room",
+  "audience-space",
+] as const;
 
 export type SourceReviewViewMode = (typeof SOURCE_REVIEW_VIEW_MODES)[number];
 export type SpatialProjectionViewMode = (typeof SPATIAL_PROJECTION_VIEW_MODES)[number];
@@ -55,6 +61,12 @@ export const SPATIAL_PROJECTION_VIEW_COPY: Record<SpatialProjectionViewMode, Spa
     description: "Inspect volume, walls, floor, and depth relationships.",
     editingStatus: "editing in volume room view",
     carrierStatus: "using CAVE carrier",
+  },
+  "audience-space": {
+    label: "Audience in Space",
+    description: "Stand at a movable, meter-aware audience position inside the physical carrier.",
+    editingStatus: "inspecting from a physical audience position",
+    carrierStatus: "using measured audience space",
   },
 };
 

@@ -9,6 +9,8 @@ import { directionToPlateLocal, preparePlatePlacement } from "./plate-placement.
 import type { SourceProjectionMode } from "../geometry/source-projection.js";
 import type { Vec3 } from "../projection.js";
 import type { PlateEditorViewMode } from "./plate-editor-view.js";
+import { DEFAULT_AUDIENCE_IN_SPACE } from "../domain/schema.js";
+import { audienceCameraForProjection } from "../geometry/audience-in-space.js";
 
 const rect = { x: 0, y: 0, width: 768, height: 768 };
 
@@ -117,6 +119,28 @@ describe("plate editor projection adapter", () => {
     expect(sourcePoint).not.toBeNull();
     expect(sourcePoint!.radius).toBeCloseTo(1, 8);
     expect(sourcePoint!.azimuth).toBeCloseTo(45, 8);
+  });
+
+  test.each([
+    ["zenith-180" as const, { kind: "angular" as const }, normalize([0, 0, 1])],
+    [
+      "cave-270" as const,
+      { kind: "box-room" as const, width: 10, depth: 8, height: 4, eyeHeight: 2, eyeX: 0, eyeZ: 0 },
+      normalize([0, 0, 1]),
+    ],
+  ])("round-trips a source direction from a displaced physical audience in %s", (mode, surface, direction) => {
+    const audience = { ...DEFAULT_AUDIENCE_IN_SPACE, xMeters: 0.4, zMeters: -0.3, eyeHeightMeters: 1.65 };
+    const adapter = createPlateEditorProjectionAdapter({
+      mode: "audience-space",
+      sourceProjectionMode: mode,
+      camera: audienceCameraForProjection(audience, mode, surface),
+      rect,
+      projectionSurface: surface,
+    });
+
+    const screen = adapter.projectSourceDirection(direction);
+    expect(screen).not.toBeNull();
+    expect(angularDistance(adapter.sourceDirectionAt(screen!)!, direction)).toBeLessThan(0.002);
   });
 
   test("clamps Zenith source-map source points to the circular rim", () => {

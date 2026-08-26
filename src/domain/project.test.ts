@@ -30,10 +30,29 @@ describe("Zenith portable domain", () => {
       canGenerate: false,
       missingPlateCommit: true,
     });
+    expect(document.workspace.audience).toMatchObject({
+      xMeters: 0,
+      zMeters: 0,
+      eyeHeightMeters: 1.65,
+      domeRadiusMeters: 7.5,
+    });
     for (const asset of Object.values(document.project.assets)) {
       expect(asset.storageRef.startsWith("blob:")).toBe(false);
     }
     expect(validateZenithDocument(document)).toEqual(document);
+  });
+
+  test("defaults meter-aware audience workspace state when loading an earlier current document", () => {
+    const document = createInitialZenithDocument({ now: NOW });
+    const withoutAudience = structuredClone(document) as unknown as Record<string, unknown>;
+    delete (withoutAudience.workspace as Record<string, unknown>).audience;
+
+    expect(validateZenithDocument(withoutAudience).workspace.audience).toMatchObject({
+      xMeters: 0,
+      zMeters: 0,
+      eyeHeightMeters: 1.65,
+      domeRadiusMeters: 7.5,
+    });
   });
 
   test("derives dirty and stale state from real commit/take relationships", () => {

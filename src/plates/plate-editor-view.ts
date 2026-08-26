@@ -1,6 +1,6 @@
 import { normalizeCameraRigPose, quaternionFromLookAt, viewMatrixFromCameraRigPose } from "../geometry/camera-rig.js";
 import type { CameraRigPose } from "../geometry/camera-rig.js";
-import { clamp, orthographicLH } from "../projection.js";
+import { clamp, orthographicLH, perspectiveLH } from "../projection.js";
 import type { Mat4, Rect, Vec3 } from "../projection.js";
 import type { CaveViewProjection } from "../geometry/cave-view.js";
 import type { DomeViewProjection } from "../geometry/dome-view.js";
@@ -40,6 +40,13 @@ export function plateEditorViewDisabledReason(
     return "Volume Room is available for CAVE and cylinder surface carriers.";
   }
   return null;
+}
+
+export function plateEditorViewUsesSurfaceGeometry(
+  mode: PlateEditorViewMode,
+  sourceProjectionMode: SourceProjectionMode,
+): boolean {
+  return (mode === "cave-room" || mode === "audience-space") && sourceProjectionIsSurfaceCarrier(sourceProjectionMode);
 }
 
 export function defaultPlateEditorCamera(
@@ -125,7 +132,7 @@ export function plateEditorViewMatrix(
   sourceProjectionMode: SourceProjectionMode,
 ): Mat4 {
   const normalized = normalizePlateEditorCamera(camera as Partial<PlateEditorCamera> & Record<string, unknown>);
-  if (mode === "dome-pov") {
+  if (mode === "dome-pov" || mode === "audience-space") {
     return viewMatrixFromCameraRigPose({
       ...normalized,
       mode: "inside",
@@ -169,15 +176,24 @@ export function plateEditorProjectionMatrix(
   camera: Partial<PlateEditorCamera>,
   sourceProjectionMode: SourceProjectionMode,
   aspect = 1,
+  viewMode: PlateEditorViewMode = "dome-orbit",
 ): Mat4 {
   const normalized = normalizePlateEditorCamera(camera as Partial<PlateEditorCamera> & Record<string, unknown>);
   const safeAspect = Math.max(0.000001, aspect);
+  if (viewMode === "audience-space") {
+    return perspectiveLH(
+      (normalized.fovDegrees * Math.PI) / 180,
+      safeAspect,
+      normalized.nearMeters || 0.01,
+      normalized.farMeters || 80,
+    );
+  }
   const viewHeight = plateEditorOrthographicViewHeight(normalized, sourceProjectionMode, safeAspect);
   return orthographicLH(viewHeight * safeAspect, viewHeight, normalized.nearMeters || 0.01, normalized.farMeters || 80);
 }
 
 export function plateEditorDomeProjection(
-  mode: "dome-orbit" | "dome-pov",
+  mode: "dome-orbit" | "dome-pov" | "audience-space",
   camera: Partial<PlateEditorCamera>,
   sourceProjectionMode: SourceProjectionMode,
   rect: Rect,
@@ -188,12 +204,16 @@ export function plateEditorDomeProjection(
     rect,
     viewMatrix: plateEditorViewMatrix(mode, normalized, sourceProjectionMode),
     fovDegrees: normalized.fovDegrees,
-    projectionMode: "orthographic",
-    orthographicViewHeight: plateEditorOrthographicViewHeight(
-      normalized,
-      sourceProjectionMode,
-      rect.width / Math.max(rect.height, 0.000001),
-    ),
+    projectionMode: mode === "audience-space" ? "perspective" : "orthographic",
+    ...(mode === "audience-space"
+      ? {}
+      : {
+          orthographicViewHeight: plateEditorOrthographicViewHeight(
+            normalized,
+            sourceProjectionMode,
+            rect.width / Math.max(rect.height, 0.000001),
+          ),
+        }),
     sourceRotationRadians: 0,
     domeTiltRadians: 0,
     mirror: false,
@@ -208,18 +228,23 @@ export function plateEditorCaveProjection(
   rect: Rect,
   showCaveMask?: boolean,
   projectionSurface?: ProjectionSurface,
+  viewMode: "cave-room" | "audience-space" = "cave-room",
 ): CaveViewProjection {
   const normalized = normalizePlateEditorCamera(camera as Partial<PlateEditorCamera> & Record<string, unknown>);
   return {
     rect,
-    viewMatrix: plateEditorViewMatrix("cave-room", normalized, sourceProjectionMode),
+    viewMatrix: plateEditorViewMatrix(viewMode, normalized, sourceProjectionMode),
     fovDegrees: normalized.fovDegrees,
-    projectionMode: "orthographic",
-    orthographicViewHeight: plateEditorOrthographicViewHeight(
-      normalized,
-      sourceProjectionMode,
-      rect.width / Math.max(rect.height, 0.000001),
-    ),
+    projectionMode: viewMode === "audience-space" ? "perspective" : "orthographic",
+    ...(viewMode === "audience-space"
+      ? {}
+      : {
+          orthographicViewHeight: plateEditorOrthographicViewHeight(
+            normalized,
+            sourceProjectionMode,
+            rect.width / Math.max(rect.height, 0.000001),
+          ),
+        }),
     sourceRotationRadians: 0,
     domeTiltRadians: 0,
     mirror: false,

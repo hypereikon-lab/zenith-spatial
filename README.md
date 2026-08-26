@@ -7,6 +7,8 @@ Zenith is a local spatial-image authoring instrument for fulldome and other imme
 3. **Generate** from that exact commit, with explicit paid confirmation when Runway is configured, or import an Image Take locally.
 4. **Review** a Plate Commit or Image Take as exact pixels or through its pinned spatial geometry.
 
+Compose and Review include an **Audience in Space** view: a perspective POV from a movable person whose X/Z position, eye height, facing, and field of view are expressed in meters. Measured rooms use their authored dimensions; angular carriers receive a workspace-only physical dome radius. Audience movement is inspection state and never changes Plate placement or projection mapping.
+
 Zenith supports multiple independent Compositions, but it is not a timeline, NLE, generic workflow engine, dashboard, or deployment platform.
 
 ## Architecture

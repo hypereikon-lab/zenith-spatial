@@ -38,7 +38,11 @@ import {
   sourceProjectionIsCylinderCarrier,
   sourceProjectionIsUnwrappedCylinderCarrier,
 } from "../geometry/source-projection.js";
-import type { PlateEditorCamera, PlateEditorViewMode } from "../plates/plate-editor-view.js";
+import {
+  plateEditorViewUsesSurfaceGeometry,
+  type PlateEditorCamera,
+  type PlateEditorViewMode,
+} from "../plates/plate-editor-view.js";
 import type { SourceProjectionMode } from "../geometry/source-projection.js";
 import {
   normalizeProjectionSurfaceForMode,
@@ -279,11 +283,11 @@ export async function createSourceMapPreviewRenderer(
   ): Promise<void> {
     ensureDepthTexture(width, height);
     ensureSurfaceGeometry(options.sourceProjectionMode, options.projectionSurface);
-    if (options.projectionViewMode !== "cave-room") ensureDomeGeometry(options.sourceProjectionMode);
+    const renderSurface = plateEditorViewUsesSurfaceGeometry(options.projectionViewMode, options.sourceProjectionMode);
+    if (!renderSurface) ensureDomeGeometry(options.sourceProjectionMode);
     if (!pipelines || !depthTexture) return;
 
-    const renderCylinder =
-      options.projectionViewMode === "cave-room" && sourceProjectionIsCylinderCarrier(options.sourceProjectionMode);
+    const renderCylinder = renderSurface && sourceProjectionIsCylinderCarrier(options.sourceProjectionMode);
     const group = bindGroup(sourceProjectionIsUnwrappedCylinderCarrier(options.sourceProjectionMode), renderCylinder);
     const colorAttachment = {
       view: context,
@@ -299,7 +303,7 @@ export async function createSourceMapPreviewRenderer(
     };
 
     runtime!.lifecycle.beginValidationScope();
-    if (options.projectionViewMode === "cave-room") {
+    if (renderSurface) {
       if (renderCylinder) {
         const zenith = options.sourceProjectionMode === "cylinder-zenith";
         const geometry = zenith ? cylinderZenithGeometry : cylinderNadirGeometry;

@@ -102,6 +102,7 @@ function buildProjectionPreviewRenderUniformInput({
     camera,
     sourceProjectionMode,
     Math.max(1, targetWidth) / Math.max(1, targetHeight),
+    resolvedViewMode,
   );
   const view = plateEditorViewMatrix(resolvedViewMode, camera, sourceProjectionMode);
   const kernel = compileProjectionKernelParams({
@@ -119,7 +120,7 @@ function buildProjectionPreviewRenderUniformInput({
     overlayOpacity: guideOverlay === "clean" || (!guideOverlay && !showProjectionGuides) ? 0.28 : 0.78,
     guideOverlay,
     showGuides: Boolean(showProjectionGuides),
-    shellShade: resolvedViewMode === "dome-pov" ? 0.12 : 0.3,
+    shellShade: resolvedViewMode === "dome-pov" || resolvedViewMode === "audience-space" ? 0.12 : 0.3,
     caveMaskMode: (showCaveMask ? (invertCaveMask ? 2 : 1) : 0) as 0 | 1 | 2,
     cameraPosition: camera.position,
     sourceOverlayOpacity,

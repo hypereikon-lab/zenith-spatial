@@ -9,7 +9,7 @@ import {
   selectedComposition,
 } from "../domain/project.js";
 import type { MediaAsset, PlateCommit } from "../domain/schema.js";
-import { importReviewMedia } from "./browser-workbench-commands.js";
+import { importReviewMedia, openDefaultReviewMedia } from "./browser-workbench-commands.js";
 import { IdGenerator } from "./id-service.js";
 import { MediaRepository } from "./media-repository.js";
 import { WorkbenchService } from "./workbench-service.js";
@@ -17,6 +17,25 @@ import { WorkbenchService } from "./workbench-service.js";
 const NOW = "2026-08-26T12:00:00.000Z";
 
 describe("browser workbench media commands", () => {
+  test("opens the bundled demo without requiring a file or duplicating it", async () => {
+    const document = createInitialZenithDocument({ now: NOW, projectId: "project-demo-command" });
+    const layer = WorkbenchService.fromDocument(document);
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const first = yield* openDefaultReviewMedia;
+        const second = yield* openDefaultReviewMedia;
+        const workbench = yield* WorkbenchService;
+        const changed = selectedComposition(workbench.getSnapshot().document);
+
+        expect(first.id).toBe(second.id);
+        expect(changed.imageTakes).toHaveLength(1);
+        expect(changed.selectedImageTakeId).toBe(first.id);
+        expect(workbench.getSnapshot().document.workspace.room).toBe("review");
+      }).pipe(Effect.provide(layer)),
+    );
+  });
+
   test("adds review media without attaching it to the selected Plate Commit", async () => {
     vi.stubGlobal(
       "createImageBitmap",

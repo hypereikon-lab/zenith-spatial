@@ -2,7 +2,7 @@ import { lazy, Suspense, useRef, useState } from "react";
 
 import { compositionReadiness, selectedComposition } from "../domain/project.js";
 import { downloadBlob } from "../media/canvas-utils.js";
-import { importReviewMedia } from "../runtime/browser-workbench-commands.js";
+import { importReviewMedia, openDefaultReviewMedia } from "../runtime/browser-workbench-commands.js";
 import { addComposition, chooseComposition, chooseRoom, removeComposition } from "../runtime/workspace-commands.js";
 import { loadProjectArchive, saveProjectArchive } from "../runtime/project-persistence.js";
 import type { Workspace } from "../domain/schema.js";
@@ -80,6 +80,13 @@ export function WorkbenchApp() {
     setBusy(false);
   }
 
+  async function openDemoMedia() {
+    setBusy(true);
+    const demo = await execute(openDefaultReviewMedia, "demo-media");
+    if (demo) setProjectStatus(`${demo.label} opened in Review for dome and immersive inspection.`);
+    setBusy(false);
+  }
+
   return (
     <div className="zenith-app">
       <header className="app-header">
@@ -125,6 +132,15 @@ export function WorkbenchApp() {
             <i aria-hidden="true" /> {snapshot.environment.webgpu ? "WEBGPU" : "CPU / NO GPU"}
           </span>
           <CloudProjectControl />
+          <button
+            className="button ghost"
+            type="button"
+            disabled={busy}
+            title="Open the bundled 180° domemaster in Review"
+            onClick={() => void openDemoMedia()}
+          >
+            Demo
+          </button>
           <button className="button" type="button" disabled={busy} onClick={() => mediaInput.current?.click()}>
             Add media
           </button>

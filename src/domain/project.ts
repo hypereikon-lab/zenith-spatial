@@ -1,4 +1,9 @@
 import { defaultPlateEditorCamera } from "../plates/plate-editor-view.js";
+import {
+  DEFAULT_REVIEW_MEDIA_ID,
+  DEFAULT_REVIEW_TAKE_ID,
+  defaultReviewMediaAsset,
+} from "../media/default-review-media.js";
 import { compensateDomeScenePlateLayersForProjectionGeometryChange } from "../plates/plate-projection-compensation.js";
 import { arrangePlateSketchDefaults } from "../plates/plate-sketch-arrangement.js";
 import { DEFAULT_PLATE_REFERENCES } from "../plates/default-plate-profile.js";
@@ -65,13 +70,15 @@ export function createInitialZenithDocument({
   now = new Date().toISOString(),
   projectId = "project-local",
   compositionId = "composition-1",
+  includeDemoMedia = false,
 }: {
   now?: string;
   projectId?: string;
   compositionId?: string;
+  includeDemoMedia?: boolean;
 } = {}): ZenithDocument {
   const scene = createDefaultDomeScene();
-  const assets = Object.fromEntries(
+  const sourceAssets = Object.fromEntries(
     DEFAULT_PLATE_REFERENCES.map((reference, index) => {
       const id = `source-default-${index + 1}`;
       return [
@@ -90,7 +97,8 @@ export function createInitialZenithDocument({
       ];
     }),
   );
-  const plates = Object.values(assets).map((asset) => ({
+  const assets: Record<string, MediaAsset> = { ...sourceAssets };
+  const plates = Object.values(sourceAssets).map((asset) => ({
     name: asset.filename,
     width: asset.width,
     height: asset.height,
@@ -127,15 +135,21 @@ export function createInitialZenithDocument({
     horizonSplit: scene.horizonSplit,
     frame: structuredClone(scene.frame0),
   };
+  const imageTakes: ImageTake[] = [];
+  if (includeDemoMedia) {
+    const demoAsset = defaultReviewMediaAsset(now);
+    assets[demoAsset.id] = demoAsset;
+    imageTakes.push(defaultReviewImageTake(plateDraft, demoAsset, now));
+  }
   const composition: Composition = {
     id: compositionId,
     label: "Composition 01",
-    sourceAssetIds: Object.keys(assets),
+    sourceAssetIds: Object.keys(sourceAssets),
     plateDraft,
     plateCommits: [],
-    imageTakes: [],
+    imageTakes,
     selectedPlateCommitId: null,
-    selectedImageTakeId: null,
+    selectedImageTakeId: imageTakes[0]?.id ?? null,
     generationDirection: "",
     generationStrategy: "integrated",
     notes: "",
@@ -270,6 +284,41 @@ export function defaultImageSpatialSpec(draft: PlateDraft): ImageSpatialSpec {
         : "black",
     targetWidth: draft.raster.width,
     targetHeight: draft.raster.height,
+  };
+}
+
+/** Selects the bundled domemaster demo, adding it to the active Composition when necessary. */
+export function addDefaultReviewMedia(document: ZenithDocument, now: string): ZenithDocument {
+  const composition = selectedComposition(document);
+  const existing = composition.imageTakes.find((take) => take.id === DEFAULT_REVIEW_TAKE_ID);
+  if (existing) {
+    return updateDocument(document, (next) => {
+      selectedComposition(next).selectedImageTakeId = existing.id;
+      next.workspace.room = "review";
+    });
+  }
+  const media = document.project.assets[DEFAULT_REVIEW_MEDIA_ID] ?? defaultReviewMediaAsset(now);
+  return addImageTake(document, media, defaultReviewImageTake(composition.plateDraft, media, now), now);
+}
+
+function defaultReviewImageTake(draft: PlateDraft, media: MediaAsset, createdAt: string): ImageTake {
+  return {
+    id: DEFAULT_REVIEW_TAKE_ID,
+    label: "Demo · Forest Domemaster 180°",
+    kind: "imported",
+    createdAt,
+    mediaAssetId: media.id,
+    plateCommitId: null,
+    direction: "",
+    strategy: "integrated",
+    spatialSpec: {
+      ...defaultImageSpatialSpec(draft),
+      sourceWidth: media.width,
+      sourceHeight: media.height,
+      sourceAspectRatio: media.width / media.height,
+      targetWidth: media.width,
+      targetHeight: media.height,
+    },
   };
 }
 

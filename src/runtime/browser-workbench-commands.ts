@@ -1,6 +1,7 @@
 import { Clock, Data, Effect } from "effect";
 
 import {
+  addDefaultReviewMedia,
   addImageTake,
   addPlateCommit,
   addSourceAssets,
@@ -10,6 +11,7 @@ import {
   replaceSelectedCompositionDraft,
   setProjection,
   selectedComposition,
+  selectedImageTake,
   updateProjectionGeometry,
   type ProjectionGeometryPatch,
   type ProjectionGeometryUpdateOptions,
@@ -461,6 +463,13 @@ export function importPlateCommit(file: File) {
 export function importImageTake(file: File) {
   return importReviewImage(file, "image-take");
 }
+
+export const openDefaultReviewMedia = Effect.gen(function* () {
+  const workbench = yield* WorkbenchService;
+  const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+  const document = yield* workbench.updateDocument((current) => addDefaultReviewMedia(current, now));
+  return selectedImageTake(selectedComposition(document))!;
+});
 
 /** Adds an image directly to Review without turning it into a Plate or pinning it to a Plate Commit. */
 export function importReviewMedia(file: File) {

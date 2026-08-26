@@ -81,7 +81,7 @@ export class WorkbenchService extends Context.Tag("zenith/WorkbenchService")<
       const now = new Date(yield* Clock.currentTimeMillis).toISOString();
       const ids = yield* IdGenerator;
       const projectId = yield* ids.next("project");
-      return yield* makeWorkbenchService(createInitialZenithDocument({ now, projectId }));
+      return yield* makeWorkbenchService(createInitialZenithDocument({ now, projectId, includeDemoMedia: true }));
     }),
   );
 

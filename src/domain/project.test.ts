@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { sourceMapPointToDirection } from "../geometry/source-projection.js";
 
 import {
+  addDefaultReviewMedia,
   addImageTake,
   addPlateCommit,
   compositionReadiness,
@@ -42,6 +43,48 @@ describe("Zenith portable domain", () => {
       expect(asset.storageRef.startsWith("blob:")).toBe(false);
     }
     expect(validateZenithDocument(document)).toEqual(document);
+  });
+
+  test("can preload standalone domemaster media for immediate Review and phone inspection", () => {
+    const document = createInitialZenithDocument({ now: NOW, includeDemoMedia: true });
+    const composition = selectedComposition(document);
+    const take = composition.imageTakes[0];
+
+    expect(composition.sourceAssetIds).toHaveLength(3);
+    expect(composition.plateDraft.frame.plateLayers).toHaveLength(3);
+    expect(take).toMatchObject({
+      label: "Demo · Forest Domemaster 180°",
+      kind: "imported",
+      plateCommitId: null,
+      spatialSpec: {
+        sourceWidth: 1920,
+        sourceHeight: 1920,
+        targetWidth: 1920,
+        targetHeight: 1920,
+        projectionMode: "zenith-180",
+      },
+    });
+    expect(composition.selectedImageTakeId).toBe(take?.id);
+    expect(reviewMediaAsset(document)?.storageRef).toBe("/demo-media/forest-domemaster-180.png");
+    expect(compositionReadiness(composition)).toMatchObject({
+      missingPlateCommit: true,
+      missingImageTake: false,
+      standaloneMediaSelected: true,
+      canReview: true,
+      canGenerate: false,
+    });
+  });
+
+  test("can open the bundled demo idempotently in an existing empty Composition", () => {
+    const initial = createInitialZenithDocument({ now: NOW });
+    const added = addDefaultReviewMedia(initial, NOW);
+    const reopened = addDefaultReviewMedia(added, NOW);
+
+    expect(reopened.workspace.room).toBe("review");
+    expect(selectedComposition(reopened).imageTakes).toHaveLength(1);
+    expect(selectedComposition(reopened).selectedImageTakeId).toBe(selectedComposition(reopened).imageTakes[0]!.id);
+    expect(selectedComposition(reopened).plateCommits).toEqual([]);
+    expect(selectedComposition(reopened).plateDraft).toEqual(selectedComposition(initial).plateDraft);
   });
 
   test("defaults meter-aware audience workspace state when loading an earlier current document", () => {

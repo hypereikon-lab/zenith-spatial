@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { compositionReadiness, selectedComposition, selectedPlateCommit } from "../../domain/project.js";
 import type { GenerationJob } from "../../domain/schema.js";
+import { compileRepairPromptForProjectionSnapshot } from "../../inpaint/inpaint-prompts.js";
 import { importImageTake, importPlateCommit } from "../../runtime/browser-workbench-commands.js";
 import {
   changeGenerationDirection,
@@ -157,6 +158,25 @@ export function GenerateRoom() {
   const latestJob = activeJobs[0] ?? null;
   const configured = snapshot.environment.generationConfigured === true;
   const canRequest = configured && readiness.canGenerate && direction.trim().length > 0 && !running;
+  const compiledPrompt = useMemo(
+    () =>
+      commit
+        ? compileRepairPromptForProjectionSnapshot(
+            "",
+            {
+              projectionMode: commit.draft.projectionMode,
+              guideSplit: commit.draft.guideSplit,
+              horizonSplit: commit.draft.horizonSplit,
+              raster: commit.draft.raster,
+              surface: commit.draft.surface,
+              frame: commit.draft.frame,
+            },
+            direction,
+            composition.generationStrategy,
+          )
+        : "",
+    [commit, composition.generationStrategy, direction],
+  );
 
   return (
     <section className="workstation generate-room" aria-label="Generate Image Takes">
@@ -304,16 +324,21 @@ export function GenerateRoom() {
             <p className="technical-note">
               Direction cannot override carrier geometry, committed placement, or raster dimensions.
             </p>
+            {compiledPrompt ? (
+              <details className="compiled-prompt">
+                <summary>Inspect exact compiled prompt · {compiledPrompt.length.toLocaleString()} chars</summary>
+                <pre>{compiledPrompt}</pre>
+              </details>
+            ) : null}
           </div>
 
-          {latestJob ? (
+          {activeJobs.slice(0, 3).map((job) => (
             <JobCard
-              job={latestJob}
-              onCancel={() =>
-                void run(cancelGeneration(latestJob.id)).catch((error: unknown) => report(error, "job-cancel"))
-              }
+              key={job.id}
+              job={job}
+              onCancel={() => void run(cancelGeneration(job.id)).catch((error: unknown) => report(error, "job-cancel"))}
             />
-          ) : null}
+          ))}
 
           <div className="panel-section">
             <h3>Image Takes</h3>
@@ -452,6 +477,33 @@ function JobCard({ job, onCancel }: { job: GenerationJob; onCancel: () => void }
           </span>
         )}
       </div>
+      <details className="job-details">
+        <summary>Job details</summary>
+        <dl>
+          <div>
+            <dt>Created</dt>
+            <dd>{shortDate(job.createdAt)}</dd>
+          </div>
+          <div>
+            <dt>Started</dt>
+            <dd>{job.startedAt ? shortDate(job.startedAt) : "—"}</dd>
+          </div>
+          <div>
+            <dt>Finished</dt>
+            <dd>{job.finishedAt ? shortDate(job.finishedAt) : "—"}</dd>
+          </div>
+          <div>
+            <dt>Strategy</dt>
+            <dd>{job.strategy}</dd>
+          </div>
+          {job.error ? (
+            <div>
+              <dt>Error</dt>
+              <dd>{job.error.message}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </details>
     </div>
   );
 }

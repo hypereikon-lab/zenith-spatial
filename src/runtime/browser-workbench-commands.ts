@@ -10,11 +10,15 @@ import {
   replaceSelectedCompositionDraft,
   setProjection,
   selectedComposition,
+  updateProjectionGeometry,
+  type ProjectionGeometryPatch,
+  type ProjectionGeometryUpdateOptions,
 } from "../domain/project.js";
 import type { ImageTake, MediaAsset, PlateCommit, PlateDraft } from "../domain/schema.js";
 import { canvasToBlob } from "../media/canvas-utils.js";
 import { readZenithProvenanceFromPngBlob } from "../media/png-zenith-provenance.js";
 import { defaultPlateSketchPlacement } from "../plates/plate-sketch-arrangement.js";
+import { DEFAULT_PLATE_REFERENCES } from "../plates/default-plate-profile.js";
 import type { PlateSketchPreviewInput, PlateSketchPreviewSession } from "../plates/plate-sketch-preview-session.js";
 import { loadPlateSketchSource, type PlateSketchImage } from "../plates/plate-sketch-sources.js";
 import { normalizePlatePlacement } from "../plates/plate-placement.js";
@@ -170,6 +174,71 @@ export function importPlateSources(files: ReadonlyArray<File>) {
   });
 }
 
+export const loadDefaultPlateSources = Effect.gen(function* () {
+  const workbench = yield* WorkbenchService;
+  const ids = yield* IdGenerator;
+  const snapshot = workbench.getSnapshot().document;
+  const current = selectedComposition(snapshot);
+  if (current.plateDraft.frame.plateLayers.length > 0) return [];
+  const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+  const loaded = yield* Effect.forEach(DEFAULT_PLATE_REFERENCES, (reference, index) =>
+    Effect.gen(function* () {
+      const existing = Object.values(snapshot.project.assets).find((asset) => asset.storageRef === reference.url);
+      const assetId = existing?.id ?? (yield* ids.next("media"));
+      const layerId = yield* ids.next("layer");
+      const asset: MediaAsset =
+        existing ??
+        ({
+          id: assetId,
+          kind: "image",
+          filename: reference.name,
+          mime: "image/png",
+          width: reference.width,
+          height: reference.height,
+          storageRef: reference.url,
+          alt: reference.name,
+          createdAt: now,
+        } satisfies MediaAsset);
+      const plate = {
+        name: reference.name,
+        width: reference.width,
+        height: reference.height,
+        aspect: reference.width / reference.height,
+      };
+      const layer: DomeScenePlateLayer = {
+        id: layerId,
+        name: reference.name,
+        index,
+        source: {
+          assetId,
+          name: reference.name,
+          width: reference.width,
+          height: reference.height,
+          aspect: plate.aspect,
+          mime: asset.mime,
+        },
+        placement: normalizePlatePlacement(
+          defaultPlateSketchPlacement(index, DEFAULT_PLATE_REFERENCES.length, plate),
+          plate,
+        ),
+        visible: true,
+        locked: false,
+      };
+      return { asset, layer };
+    }),
+  );
+  yield* workbench.updateDocument((document) =>
+    addSourceAssets(
+      document,
+      loaded.map(({ asset }) => asset),
+      loaded.map(({ layer }) => layer),
+      now,
+      { replace: true },
+    ),
+  );
+  return loaded.map(({ asset }) => asset);
+});
+
 export function removePlateSource(assetId: string) {
   return Effect.gen(function* () {
     const workbench = yield* WorkbenchService;
@@ -200,6 +269,14 @@ export function changeProjection(projectionMode: SourceProjectionMode) {
         now,
       ),
     );
+  });
+}
+
+export function changeProjectionGeometry(patch: ProjectionGeometryPatch, options?: ProjectionGeometryUpdateOptions) {
+  return Effect.gen(function* () {
+    const workbench = yield* WorkbenchService;
+    const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+    return yield* workbench.updateDocument((document) => updateProjectionGeometry(document, patch, now, options));
   });
 }
 

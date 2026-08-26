@@ -24,6 +24,7 @@ import { sourceProjectionLabel } from "../../geometry/source-projection.js";
 import { chooseImageTake, choosePlateCommit, updateWorkspace } from "../../runtime/workspace-commands.js";
 import { useEffectRunner, useWorkbenchSnapshot } from "../runtime-bridge.js";
 import { useMediaUrl } from "../use-media-url.js";
+import { ProjectionCameraControls } from "../projection-camera-controls.js";
 
 type ReviewTarget =
   | { readonly kind: "commit"; readonly value: PlateCommit }
@@ -272,6 +273,23 @@ export function ReviewRoom() {
           </div>
         </div>
         <div className="panel-section">
+          <h3>Original media</h3>
+          <button
+            className="button ghost full"
+            type="button"
+            disabled={!mediaUrl || !asset}
+            onClick={() => {
+              if (!mediaUrl || !asset) return;
+              const link = document.createElement("a");
+              link.href = mediaUrl;
+              link.download = asset.filename;
+              link.click();
+            }}
+          >
+            Download original pixels
+          </button>
+        </div>
+        <div className="panel-section">
           <h3>Inspection mode</h3>
           <div className="segmented vertical">
             <button
@@ -447,6 +465,15 @@ export function ReviewRoom() {
                     Invert mask
                   </label>
                 </div>
+                {spec ? (
+                  <ProjectionCameraControls
+                    viewMode={viewMode}
+                    camera={camera}
+                    projectionMode={spec.projectionMode}
+                    surface={spec.surface}
+                    onChange={setCamera}
+                  />
+                ) : null}
               </div>
             </>
           )}

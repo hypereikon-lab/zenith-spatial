@@ -12,9 +12,14 @@ import {
 import { sourceProjectionLabel } from "../../geometry/source-projection.js";
 import {
   GENERATION_ASPECT_PRESETS,
+  MAX_PLANAR_ROOF_ANCHORS,
   carrierRasterForAspect,
+  planarRoofProfile,
+  projectionSpatialAnchors,
   projectionSurfaceSummary,
+  projectionSurfacePhysicalHorizon,
   type GenerationAspectPreset,
+  type PlanarRoofAnchor,
   type ProjectionSurface,
 } from "../../lib/shared/contracts/projection-authoring.js";
 import { SOURCE_PROJECTION_MODES, type SourceProjectionMode } from "../../lib/shared/contracts/projection-profile.js";
@@ -29,6 +34,12 @@ import {
 import { renderPlateSketchEditorOverlay } from "../../plates/plate-sketch-editor-overlay.js";
 import { createPlateEditorProjectionAdapter } from "../../plates/plate-editor-projection-adapter.js";
 import {
+  buildProjectedSpatialAnchorGuides,
+  projectedSpatialAnchorHandleHit,
+  type ProjectedSpatialAnchorGuide,
+  type ProjectedSpatialAnchorId,
+} from "../../plates/projected-physical-horizon.js";
+import {
   defaultPlateEditorCamera,
   plateEditorViewDisabledReason,
   PLATE_EDITOR_VIEW_MODES,
@@ -42,17 +53,21 @@ import {
   type PlateSketchPreviewSession,
 } from "../../plates/plate-sketch-preview-session.js";
 import { MAX_PLATE_SCALE, MIN_PLATE_SCALE, normalizePlatePlacement } from "../../plates/plate-placement.js";
-import type { Point2D } from "../../projection.js";
+import { clamp, type Point2D } from "../../projection.js";
 import {
   changeProjection,
+  changeProjectionGeometry,
   commitPlate,
   importPlateSources,
+  loadDefaultPlateSources,
   loadSelectedCompositionPlates,
   removePlateSource,
   replacePlateDraft,
   type LoadedCompositionPlate,
 } from "../../runtime/browser-workbench-commands.js";
 import { updateWorkspace } from "../../runtime/workspace-commands.js";
+import { CarrierFieldAnchors } from "../carrier-field-anchors.js";
+import { ProjectionCameraControls } from "../projection-camera-controls.js";
 import { useEffectRunner, useRuntime, useWorkbenchSnapshot } from "../runtime-bridge.js";
 
 const HANDLE_RADIUS = 26;
@@ -60,7 +75,8 @@ const HIT_PAD = 0.014;
 
 type ActiveGesture =
   | { readonly kind: "plate"; drag: PlateSketchEditorDrag }
-  | { readonly kind: "camera"; drag: ProjectionCameraDragState };
+  | { readonly kind: "camera"; drag: ProjectionCameraDragState }
+  | { readonly kind: "spatial-anchor"; pointerId: number; anchorId: ProjectedSpatialAnchorId };
 
 export function ComposeRoom() {
   const snapshot = useWorkbenchSnapshot();
@@ -190,6 +206,27 @@ export function ComposeRoom() {
     visibleLayers,
   ]);
 
+  const projectedGuides = useMemo<ProjectedSpatialAnchorGuide[]>(() => {
+    if (viewMode === "source-map") return [];
+    const adapter = createPlateEditorProjectionAdapter({
+      mode: viewMode,
+      sourceProjectionMode: draft.projectionMode,
+      camera,
+      rect: { x: 0, y: 0, width: canvasSize.width, height: canvasSize.height },
+      domeGuideSemanticSplit: draft.guideSplit,
+      domeGuideHorizonSplit: draft.horizonSplit,
+      showCaveMask: showCarrierMask,
+      projectionSurface: draft.surface,
+    });
+    return buildProjectedSpatialAnchorGuides({
+      surface: draft.surface,
+      mode: draft.projectionMode,
+      viewport: { x: 0, y: 0, width: canvasSize.width, height: canvasSize.height },
+      projectPhysicalDirection: adapter.projectPhysicalDirection,
+      projectPhysicalSurfacePoint: adapter.projectPhysicalSurfacePoint,
+    });
+  }, [camera, canvasSize, draft, showCarrierMask, viewMode]);
+
   const drawOverlay = useCallback(() => {
     if (!overlayCanvas || !previewInput) return;
     overlayCanvas.width = canvasSize.width;
@@ -226,6 +263,7 @@ export function ComposeRoom() {
       previewHeight: canvasSize.height,
       activeIndex,
       plateEditMode,
+      projectedGuides,
       coordinateSpace: "canvas",
     });
   }, [
@@ -237,6 +275,7 @@ export function ComposeRoom() {
     plateEditMode,
     plates,
     previewInput,
+    projectedGuides,
     showCarrierMask,
     viewMode,
   ]);
@@ -323,10 +362,21 @@ export function ComposeRoom() {
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
-    if (!previewInput || plates.length === 0) return;
     event.currentTarget.focus({ preventScroll: true });
     const point = pointFromPointer(event);
     if (!point) return;
+    const projectedAnchor = projectedSpatialAnchorHandleHit(
+      point,
+      projectedGuides,
+      HANDLE_RADIUS * Math.min(window.devicePixelRatio || 1, 2),
+    );
+    if (viewMode !== "source-map" && projectedAnchor) {
+      event.preventDefault();
+      gesture.current = { kind: "spatial-anchor", pointerId: event.pointerId, anchorId: projectedAnchor.id };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+    if (!previewInput || plates.length === 0) return;
     const adapter = currentAdapter();
     const viewModel = editorViewModel();
     const hit = hitTestPlateSketchEditor({
@@ -383,9 +433,13 @@ export function ComposeRoom() {
     if (gesture.current) event.currentTarget.setPointerCapture(event.pointerId);
   }
 
-  function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+  function handlePointerMove(event: React.PointerEvent<HTMLElement>) {
     const active = gesture.current;
     if (!active) return;
+    if (active.kind === "spatial-anchor") {
+      if (active.pointerId === event.pointerId) updateProjectedAnchor(active.anchorId, pointFromPointer(event));
+      return;
+    }
     if (active.kind === "camera") {
       if (!overlayCanvas) return;
       const update = updateProjectionCameraDrag({
@@ -427,10 +481,90 @@ export function ComposeRoom() {
     });
   }
 
-  function endPointer(event: React.PointerEvent<HTMLCanvasElement>) {
+  function endPointer(event: React.PointerEvent<HTMLElement>) {
     gesture.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function beginProjectedAnchor(event: React.PointerEvent<HTMLButtonElement>, anchorId: ProjectedSpatialAnchorId) {
+    event.preventDefault();
+    event.stopPropagation();
+    gesture.current = { kind: "spatial-anchor", pointerId: event.pointerId, anchorId };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateProjectedAnchor(anchorId, pointFromPointer(event));
+  }
+
+  function updateProjectedAnchor(anchorId: ProjectedSpatialAnchorId, point: Point2D | null) {
+    if (!point) return;
+    const guide = projectedGuides.find((candidate) => candidate.id === anchorId);
+    if (!guide) return;
+    const adapter = currentAdapter();
+    if (draft.surface.kind === "angular") {
+      const direction = adapter.physicalDirectionAt(point);
+      if (!direction) return;
+      const value = clamp((Math.asin(clamp(direction[1], -1, 1)) * 180) / Math.PI, guide.minimum, guide.maximum);
+      const anchors = projectionSpatialAnchors(draft.surface);
+      applyProjectionGeometry(
+        {
+          surface: {
+            ...draft.surface,
+            anchors: {
+              ...anchors,
+              ...(anchorId === "semantic" ? { semanticElevationDegrees: value } : { horizonElevationDegrees: value }),
+            },
+          },
+        },
+        false,
+      );
+      return;
+    }
+    const surfacePoint = adapter.physicalSurfacePointAt(point);
+    if (!surfacePoint) return;
+    const value = clamp(draft.surface.eyeHeight + surfacePoint[1], guide.minimum, guide.maximum);
+    applyProjectionGeometry({ surface: { ...draft.surface, anchors: { horizonHeight: value } } }, false);
+  }
+
+  function handleProjectedAnchorKey(event: React.KeyboardEvent<HTMLButtonElement>, guide: ProjectedSpatialAnchorGuide) {
+    const coarse = event.shiftKey ? 10 : 1;
+    const step = guide.unit === "meters" ? 0.01 * coarse : 0.5 * coarse;
+    let value: number | null = null;
+    if (event.key === "ArrowUp" || event.key === "ArrowRight") value = guide.value + step;
+    if (event.key === "ArrowDown" || event.key === "ArrowLeft") value = guide.value - step;
+    if (event.key === "Home") value = guide.minimum;
+    if (event.key === "End") value = guide.maximum;
+    if (value === null) return;
+    event.preventDefault();
+    setProjectedAnchorValue(guide, value);
+  }
+
+  function setProjectedAnchorValue(guide: ProjectedSpatialAnchorGuide, value: number) {
+    const clamped = clamp(value, guide.minimum, guide.maximum);
+    if (draft.surface.kind === "angular") {
+      const anchors = projectionSpatialAnchors(draft.surface);
+      applyProjectionGeometry(
+        {
+          surface: {
+            ...draft.surface,
+            anchors: {
+              ...anchors,
+              ...(guide.id === "semantic"
+                ? { semanticElevationDegrees: clamped }
+                : { horizonElevationDegrees: clamped }),
+            },
+          },
+        },
+        false,
+      );
+    } else {
+      applyProjectionGeometry({ surface: { ...draft.surface, anchors: { horizonHeight: clamped } } }, false);
+    }
+  }
+
+  function applyProjectionGeometry(patch: Parameters<typeof changeProjectionGeometry>[0], compensatePlacements = true) {
+    void run(changeProjectionGeometry(patch, { compensatePlacements })).catch((error: unknown) =>
+      reportError(error, "projection-geometry"),
+    );
   }
 
   function handleWheel(event: React.WheelEvent<HTMLCanvasElement>) {
@@ -580,6 +714,19 @@ export function ComposeRoom() {
           })}
         </div>
         <div className="panel-actions stacked">
+          <button
+            className="button ghost full"
+            type="button"
+            disabled={draft.frame.plateLayers.length > 0}
+            onClick={() => {
+              setStatus("Loading default plate references…");
+              void run(loadDefaultPlateSources)
+                .then((assets) => setStatus(`${assets.length} default plate sources loaded.`))
+                .catch((error: unknown) => reportError(error, "default-sources"));
+            }}
+          >
+            Load default plates
+          </button>
           <button className="button full" type="button" onClick={() => plateInput.current?.click()}>
             Import sources
           </button>
@@ -625,25 +772,52 @@ export function ComposeRoom() {
               );
             })}
           </div>
+          <div className="segmented compact compose-overlay-toggle" aria-label="Compose review overlay">
+            {(["domemaster", "dome-check", "rim-check"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={snapshot.document.workspace.viewerMode === mode ? "is-active" : ""}
+                onClick={() =>
+                  void run(
+                    updateWorkspace((workspace) => {
+                      workspace.viewerMode = mode;
+                    }),
+                  ).catch((error: unknown) => reportError(error, "viewer-overlay"))
+                }
+              >
+                {mode === "domemaster" ? "Clean" : mode === "dome-check" ? "Guides" : "Edge"}
+              </button>
+            ))}
+          </div>
           {viewMode !== "source-map" ? (
-            <div className="check-grid">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={showCarrierMask}
-                  onChange={(event) => setShowCarrierMask(event.currentTarget.checked)}
-                />{" "}
-                Carrier mask
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={invertCarrierMask}
-                  onChange={(event) => setInvertCarrierMask(event.currentTarget.checked)}
-                />{" "}
-                Invert mask
-              </label>
-            </div>
+            <>
+              <div className="check-grid">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showCarrierMask}
+                    onChange={(event) => setShowCarrierMask(event.currentTarget.checked)}
+                  />{" "}
+                  Carrier mask
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={invertCarrierMask}
+                    onChange={(event) => setInvertCarrierMask(event.currentTarget.checked)}
+                  />{" "}
+                  Invert mask
+                </label>
+              </div>
+              <ProjectionCameraControls
+                viewMode={viewMode}
+                camera={camera}
+                projectionMode={draft.projectionMode}
+                surface={draft.surface}
+                onChange={setCamera}
+              />
+            </>
           ) : null}
         </div>
       </aside>
@@ -711,6 +885,32 @@ export function ComposeRoom() {
               onPointerCancel={endPointer}
               onWheel={handleWheel}
             />
+            {projectedGuides.some((guide) => guide.handle) ? (
+              <div className="projected-anchor-layer">
+                {projectedGuides.map((guide) =>
+                  guide.handle ? (
+                    <button
+                      key={guide.id}
+                      type="button"
+                      className={`projected-anchor-handle ${guide.id === "semantic" ? "is-semantic" : ""}`}
+                      style={{
+                        left: `${(guide.handle.x / Math.max(canvasSize.width, 1)) * 100}%`,
+                        top: `${(guide.handle.y / Math.max(canvasSize.height, 1)) * 100}%`,
+                      }}
+                      aria-label={`Drag ${guide.label.toLowerCase()} on projected space, currently ${guide.value.toFixed(guide.unit === "meters" ? 2 : 1)} ${guide.unit}`}
+                      title="Drag the spatial anchor; observer pose and source-map allocation remain fixed"
+                      onPointerDown={(event) => beginProjectedAnchor(event, guide.id)}
+                      onPointerMove={handlePointerMove}
+                      onPointerUp={endPointer}
+                      onPointerCancel={endPointer}
+                      onKeyDown={(event) => handleProjectedAnchorKey(event, guide)}
+                    >
+                      <span aria-hidden="true" />
+                    </button>
+                  ) : null,
+                )}
+              </div>
+            ) : null}
             {plates.length === 0 ? (
               <button className="empty-viewport" type="button" onClick={() => plateInput.current?.click()}>
                 <strong>Drop source images</strong>
@@ -726,7 +926,7 @@ export function ComposeRoom() {
           <span>
             {viewMode === "source-map"
               ? "Drag plates · handles scale/warp · top handle rotates"
-              : "Drag empty space to orbit · wheel to dolly"}
+              : "Drag horizon handles · empty space orbits · wheel dollies"}
           </span>
         </div>
       </div>
@@ -872,80 +1072,27 @@ export function ComposeRoom() {
               </button>
             </div>
 
-            <div className="panel-section">
-              <h3>Carrier</h3>
-              <label className="field-stack">
-                <span>Projection contract</span>
-                <select
-                  value={draft.projectionMode}
-                  onChange={(event) =>
-                    void run(changeProjection(event.currentTarget.value as SourceProjectionMode)).catch(
-                      (error: unknown) => reportError(error, "projection"),
-                    )
-                  }
-                >
-                  {SOURCE_PROJECTION_MODES.map((mode) => (
-                    <option key={mode} value={mode}>
-                      {sourceProjectionLabel(mode)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field-row">
-                <span>Output raster</span>
-                <select
-                  value={draft.raster.aspectPreset}
-                  disabled={draft.projectionMode === "cylinder-wall"}
-                  onChange={(event) =>
-                    mutateDraft((next) => {
-                      next.raster = carrierRasterForAspect(event.currentTarget.value as GenerationAspectPreset);
-                    })
-                  }
-                >
-                  {GENERATION_ASPECT_PRESETS.map((preset) => (
-                    <option key={preset} value={preset}>
-                      {preset}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className="technical-note">{projectionSurfaceSummary(draft.surface)}</p>
-              <SurfaceFields
-                surface={draft.surface}
-                onChange={(surface) =>
-                  mutateDraft((next) => {
-                    next.surface = surface;
-                  })
-                }
-              />
-              <NumberField
-                label="Semantic split"
-                value={draft.guideSplit}
-                min={0}
-                max={1}
-                step={0.01}
-                onChange={(value) =>
-                  mutateDraft((next) => {
-                    next.guideSplit = value;
-                  })
-                }
-              />
-              <NumberField
-                label="Horizon split"
-                value={draft.horizonSplit}
-                min={0}
-                max={1}
-                step={0.01}
-                onChange={(value) =>
-                  mutateDraft((next) => {
-                    next.horizonSplit = value;
-                  })
-                }
-              />
-            </div>
+            <CarrierFields
+              draft={draft}
+              onProjectionChange={(mode) =>
+                void run(changeProjection(mode)).catch((error: unknown) => reportError(error, "projection"))
+              }
+              onGeometryChange={applyProjectionGeometry}
+            />
           </div>
         ) : (
-          <p className="empty-copy">Select or import a source layer.</p>
+          <div className="inspector-scroll">
+            <p className="empty-copy panel-section">
+              Select or import a source layer. Carrier authoring remains available.
+            </p>
+            <CarrierFields
+              draft={draft}
+              onProjectionChange={(mode) =>
+                void run(changeProjection(mode)).catch((error: unknown) => reportError(error, "projection"))
+              }
+              onGeometryChange={applyProjectionGeometry}
+            />
+          </div>
         )}
         <div className="commit-block">
           <button
@@ -991,6 +1138,84 @@ function PanelHeading({ eyebrow, title, value }: { eyebrow: string; title: strin
   );
 }
 
+function CarrierFields({
+  draft,
+  onProjectionChange,
+  onGeometryChange,
+}: {
+  draft: PlateDraft;
+  onProjectionChange: (mode: SourceProjectionMode) => void;
+  onGeometryChange: (patch: Parameters<typeof changeProjectionGeometry>[0], compensatePlacements?: boolean) => void;
+}) {
+  return (
+    <div className="panel-section">
+      <h3>Carrier</h3>
+      <label className="field-stack">
+        <span>Projection contract</span>
+        <select
+          value={draft.projectionMode}
+          onChange={(event) => onProjectionChange(event.currentTarget.value as SourceProjectionMode)}
+        >
+          {SOURCE_PROJECTION_MODES.map((mode) => (
+            <option key={mode} value={mode}>
+              {sourceProjectionLabel(mode)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field-row">
+        <span>Output raster</span>
+        <select
+          value={draft.raster.aspectPreset}
+          disabled={draft.projectionMode === "cylinder-wall"}
+          onChange={(event) =>
+            onGeometryChange({
+              raster: carrierRasterForAspect(event.currentTarget.value as GenerationAspectPreset),
+            })
+          }
+        >
+          {GENERATION_ASPECT_PRESETS.map((preset) => (
+            <option key={preset} value={preset}>
+              {preset}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="technical-note">{projectionSurfaceSummary(draft.surface)}</p>
+      <SurfaceFields
+        mode={draft.projectionMode}
+        surface={draft.surface}
+        onChange={(surface) => onGeometryChange({ surface })}
+        onAnchorChange={(surface) => onGeometryChange({ surface }, false)}
+      />
+      <CarrierFieldAnchors
+        mode={draft.projectionMode}
+        guideSplit={draft.guideSplit}
+        horizonSplit={draft.horizonSplit}
+        onChange={(id, value) =>
+          onGeometryChange(id === "inner-split" ? { guideSplit: value } : { horizonSplit: value })
+        }
+      />
+      <NumberField
+        label="Semantic split"
+        value={draft.guideSplit}
+        min={0}
+        max={1}
+        step={0.01}
+        onChange={(value) => onGeometryChange({ guideSplit: value })}
+      />
+      <NumberField
+        label="Horizon split"
+        value={draft.horizonSplit}
+        min={0}
+        max={1}
+        step={0.01}
+        onChange={(value) => onGeometryChange({ horizonSplit: value })}
+      />
+    </div>
+  );
+}
+
 function NumberField({
   label,
   value,
@@ -1030,33 +1255,40 @@ function NumberField({
 }
 
 function SurfaceFields({
+  mode,
   surface,
   onChange,
+  onAnchorChange,
 }: {
+  mode: SourceProjectionMode;
   surface: ProjectionSurface;
   onChange: (surface: ProjectionSurface) => void;
+  onAnchorChange: (surface: ProjectionSurface) => void;
 }) {
   if (surface.kind === "angular") {
     const anchors = surface.anchors ?? { semanticElevationDegrees: 45, horizonElevationDegrees: 0 };
+    const zenithOrdered = mode !== "nadir-180";
+    const domainMinimum = mode === "nadir-180" ? -89.5 : mode === "zenith-230" ? -25 : 0;
+    const domainMaximum = mode === "nadir-180" ? 0 : 89.5;
     return (
       <>
         <NumberField
           label="Semantic elevation"
           value={anchors.semanticElevationDegrees}
           suffix="°"
-          min={-89.9}
-          max={89.9}
+          min={zenithOrdered ? anchors.horizonElevationDegrees + 0.5 : domainMinimum}
+          max={zenithOrdered ? domainMaximum : anchors.horizonElevationDegrees - 0.5}
           step={0.5}
-          onChange={(value) => onChange({ ...surface, anchors: { ...anchors, semanticElevationDegrees: value } })}
+          onChange={(value) => onAnchorChange({ ...surface, anchors: { ...anchors, semanticElevationDegrees: value } })}
         />
         <NumberField
           label="Horizon elevation"
           value={anchors.horizonElevationDegrees}
           suffix="°"
-          min={-89.9}
-          max={89.9}
+          min={zenithOrdered ? domainMinimum : anchors.semanticElevationDegrees + 0.5}
+          max={zenithOrdered ? anchors.semanticElevationDegrees - 0.5 : domainMaximum}
           step={0.5}
-          onChange={(value) => onChange({ ...surface, anchors: { ...anchors, horizonElevationDegrees: value } })}
+          onChange={(value) => onAnchorChange({ ...surface, anchors: { ...anchors, horizonElevationDegrees: value } })}
         />
       </>
     );
@@ -1089,6 +1321,7 @@ function SurfaceFields({
           step={0.05}
           onChange={(value) => onChange({ ...surface, eyeHeight: value })}
         />
+        <PhysicalHorizonField surface={surface} onChange={onAnchorChange} />
       </>
     );
   }
@@ -1142,6 +1375,7 @@ function SurfaceFields({
           step={0.05}
           onChange={(value) => onChange({ ...surface, eyeZ: value })}
         />
+        <PhysicalHorizonField surface={surface} onChange={onAnchorChange} />
       </>
     );
   }
@@ -1185,7 +1419,141 @@ function SurfaceFields({
         step={0.05}
         onChange={(value) => onChange({ ...surface, eyeZ: value })}
       />
+      <PhysicalHorizonField surface={surface} onChange={onAnchorChange} />
+      <HallRoofProfileEditor surface={surface} onChange={onChange} />
     </>
+  );
+}
+
+function HallRoofProfileEditor({
+  surface,
+  onChange,
+}: {
+  surface: Extract<ProjectionSurface, { kind: "double-gable-room" }>;
+  onChange: (surface: ProjectionSurface) => void;
+}) {
+  const profile = planarRoofProfile(surface);
+  const anchorFloor = Math.max(0.05, surface.eyeHeight + 0.01, projectionSpatialAnchors(surface).horizonHeight + 0.01);
+
+  function replaceProfile(next: PlanarRoofAnchor[]) {
+    onChange({ ...surface, roofProfile: next });
+  }
+
+  function patchAnchor(index: number, patch: Partial<PlanarRoofAnchor>) {
+    replaceProfile(profile.map((anchor, anchorIndex) => (anchorIndex === index ? { ...anchor, ...patch } : anchor)));
+  }
+
+  function addAnchor(index: number) {
+    if (profile.length >= MAX_PLANAR_ROOF_ANCHORS) return;
+    const left = profile[index];
+    const right = profile[index + 1];
+    if (!left || !right) return;
+    replaceProfile([
+      ...profile.slice(0, index + 1),
+      {
+        id: `roof-break:${left.id}:${right.id}`,
+        position: (left.position + right.position) * 0.5,
+        height: (left.height + right.height) * 0.5,
+        role: "break",
+      },
+      ...profile.slice(index + 1),
+    ]);
+  }
+
+  function removeAnchor(index: number) {
+    if (index <= 0 || index >= profile.length - 1 || profile.length <= 3) return;
+    replaceProfile(profile.filter((_, anchorIndex) => anchorIndex !== index));
+  }
+
+  return (
+    <div className="roof-profile-editor" aria-label="Piecewise-planar roof profile">
+      <div className="roof-profile-heading">
+        <span>Planar roof profile</span>
+        <strong>
+          {profile.length - 1} planes · {profile.length}/{MAX_PLANAR_ROOF_ANCHORS} anchors
+        </strong>
+      </div>
+      {profile.map((anchor, index) => {
+        const first = index === 0;
+        const last = index === profile.length - 1;
+        return (
+          <div className="roof-anchor-row" key={anchor.id}>
+            <span className={`roof-anchor-role ${anchor.role}`}>{anchor.role}</span>
+            <label>
+              <span>Across %</span>
+              <input
+                type="number"
+                aria-label={`${anchor.role} across percent`}
+                value={round(anchor.position * 100)}
+                min={first ? 0 : profile[index - 1]!.position * 100 + 0.1}
+                max={last ? 100 : profile[index + 1]!.position * 100 - 0.1}
+                step={0.1}
+                disabled={first || last}
+                onChange={(event) => patchAnchor(index, { position: Number(event.currentTarget.value) / 100 })}
+              />
+            </label>
+            <label>
+              <span>Height m</span>
+              <input
+                type="number"
+                aria-label={`${anchor.role} height metres`}
+                value={round(anchor.height)}
+                min={anchorFloor}
+                step={0.05}
+                onChange={(event) =>
+                  patchAnchor(index, { height: Math.max(anchorFloor, Number(event.currentTarget.value)) })
+                }
+              />
+            </label>
+            <button
+              type="button"
+              className="roof-anchor-action"
+              disabled={last || profile.length >= MAX_PLANAR_ROOF_ANCHORS}
+              aria-label={`Add roof anchor after ${anchor.role}`}
+              onClick={() => addAnchor(index)}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              className="roof-anchor-action danger"
+              disabled={first || last || profile.length <= 3}
+              aria-label={`Remove ${anchor.role} roof anchor`}
+              onClick={() => removeAnchor(index)}
+            >
+              −
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PhysicalHorizonField({
+  surface,
+  onChange,
+}: {
+  surface: Exclude<ProjectionSurface, { kind: "angular" }>;
+  onChange: (surface: ProjectionSurface) => void;
+}) {
+  const horizon = projectionSurfacePhysicalHorizon(surface);
+  if (!horizon) return null;
+  return (
+    <NumberField
+      label="Texture horizon"
+      value={horizon.height}
+      suffix="m"
+      min={0.01}
+      max={Math.max(0.01, horizon.upperLimit - 0.01)}
+      step={0.01}
+      onChange={(value) =>
+        onChange({
+          ...surface,
+          anchors: { horizonHeight: clamp(value, 0.01, Math.max(0.01, horizon.upperLimit - 0.01)) },
+        })
+      }
+    />
   );
 }
 

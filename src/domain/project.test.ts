@@ -11,6 +11,7 @@ import {
   plateDraftFingerprint,
   replaceSelectedCompositionDraft,
   selectedComposition,
+  updateProjectionGeometry,
   validateZenithDocument,
 } from "./project.js";
 import type { ImageTake, MediaAsset, PlateCommit } from "./schema.js";
@@ -96,6 +97,69 @@ describe("Zenith portable domain", () => {
     document = deleteComposition(document, "composition-copy");
     const unchanged = deleteComposition(document, "composition-1");
     expect(unchanged.project.compositions).toHaveLength(1);
+  });
+
+  test("compensates plate placements when guide geometry changes", () => {
+    const document = createInitialZenithDocument({ now: NOW });
+    const before = selectedComposition(document).plateDraft;
+    const beforePlacement = structuredClone(before.frame.plateLayers[0]!.placement);
+
+    const changed = updateProjectionGeometry(document, { guideSplit: before.guideSplit + 0.12 }, NOW);
+    const after = selectedComposition(changed).plateDraft;
+    const afterPlacement = after.frame.plateLayers[0]!.placement;
+
+    expect(after.guideSplit).toBeCloseTo(before.guideSplit + 0.12, 8);
+    expect(afterPlacement.radius).not.toBeCloseTo(beforePlacement.radius, 8);
+  });
+
+  test("compensates plate placements across projection carriers", () => {
+    const document = createInitialZenithDocument({ now: NOW });
+    const beforePlacement = structuredClone(selectedComposition(document).plateDraft.frame.plateLayers[0]!.placement);
+
+    const changed = updateProjectionGeometry(
+      document,
+      {
+        projectionMode: "nadir-180",
+        raster: { aspectPreset: "1:1", width: 1920, height: 1920, domainFit: "full-frame" },
+      },
+      NOW,
+    );
+    const after = selectedComposition(changed).plateDraft;
+    const afterPlacement = after.frame.plateLayers[0]!.placement;
+
+    expect(after.projectionMode).toBe("nadir-180");
+    expect(after.surface).toEqual({
+      kind: "angular",
+      anchors: { semanticElevationDegrees: -45, horizonElevationDegrees: 0 },
+    });
+    expect(afterPlacement.flipY).toBe(!beforePlacement.flipY);
+    expect(afterPlacement.radius).not.toBeCloseTo(beforePlacement.radius, 8);
+  });
+
+  test("moves authored spatial anchors without rewriting plate coordinates", () => {
+    const document = createInitialZenithDocument({ now: NOW });
+    const before = selectedComposition(document).plateDraft;
+    const placement = structuredClone(before.frame.plateLayers[0]!.placement);
+    expect(before.surface.kind).toBe("angular");
+
+    const changed = updateProjectionGeometry(
+      document,
+      {
+        surface: {
+          kind: "angular",
+          anchors: { semanticElevationDegrees: 52, horizonElevationDegrees: 7 },
+        },
+      },
+      NOW,
+      { compensatePlacements: false },
+    );
+    const after = selectedComposition(changed).plateDraft;
+
+    expect(after.surface).toEqual({
+      kind: "angular",
+      anchors: { semanticElevationDegrees: 52, horizonElevationDegrees: 7 },
+    });
+    expect(after.frame.plateLayers[0]!.placement).toEqual(placement);
   });
 });
 

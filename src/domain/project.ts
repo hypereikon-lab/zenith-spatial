@@ -1,4 +1,5 @@
 import { defaultPlateEditorCamera } from "../plates/plate-editor-view.js";
+import { compensateDomeScenePlateLayersForProjectionGeometryChange } from "../plates/plate-projection-compensation.js";
 import { arrangePlateSketchDefaults } from "../plates/plate-sketch-arrangement.js";
 import { DEFAULT_PLATE_REFERENCES } from "../plates/default-plate-profile.js";
 import { createDefaultDomeScene } from "../scene/dome-scene.js";
@@ -6,10 +7,16 @@ import {
   carrierRasterForAspect,
   cloneCarrierRaster,
   cloneProjectionSurface,
+  defaultProjectionSurface,
   normalizeProjectionSurfaceForMode,
   type CarrierRaster,
+  type ProjectionSurface,
 } from "../lib/shared/contracts/projection-authoring.js";
 import { SOURCE_PROJECTION_DEFAULT_GUIDES } from "../lib/shared/contracts/projection-profile.js";
+import {
+  normalizeSourceGuideCarrierHorizonRadius,
+  normalizeSourceInnerGuideSplit,
+} from "../geometry/source-guide-semantics.js";
 import type {
   Composition,
   ImageSpatialSpec,
@@ -37,6 +44,19 @@ export type CompositionReadiness = {
 export type NewMediaAssetInput = Omit<MediaAsset, "id" | "createdAt"> & {
   readonly id: string;
   readonly createdAt: string;
+};
+
+export type ProjectionGeometryPatch = {
+  readonly projectionMode?: PlateDraft["projectionMode"];
+  readonly surface?: ProjectionSurface;
+  readonly raster?: CarrierRaster;
+  readonly guideSplit?: number;
+  readonly horizonSplit?: number;
+};
+
+export type ProjectionGeometryUpdateOptions = {
+  /** Spatial anchors are authoring overlays and do not remap plate coordinates. */
+  readonly compensatePlacements?: boolean;
 };
 
 export function createInitialZenithDocument({
@@ -462,26 +482,82 @@ export function setProjection(
   raster: CarrierRaster,
   now: string,
 ): ZenithDocument {
+  return updateProjectionGeometry(document, { projectionMode, raster }, now);
+}
+
+/**
+ * Changes the authored carrier while preserving every plate's physical
+ * direction. UI controls must use this transition for all projection geometry
+ * edits instead of mutating PlateDraft fields independently.
+ */
+export function updateProjectionGeometry(
+  document: ZenithDocument,
+  patch: ProjectionGeometryPatch,
+  now: string,
+  { compensatePlacements = true }: ProjectionGeometryUpdateOptions = {},
+): ZenithDocument {
   return updateDocument(document, (next) => {
     const composition = selectedComposition(next);
-    const defaults = SOURCE_PROJECTION_DEFAULT_GUIDES[projectionMode];
-    composition.plateDraft.projectionMode = projectionMode;
-    composition.plateDraft.surface = normalizeProjectionSurfaceForMode(composition.plateDraft.surface, projectionMode);
-    composition.plateDraft.raster = cloneCarrierRaster(raster);
-    composition.plateDraft.guideSplit = defaults.innerSplit;
-    composition.plateDraft.horizonSplit = defaults.horizonSplit;
-    composition.updatedAt = now;
-    const camera = defaultPlateEditorCamera(projectionMode, composition.plateDraft.surface);
-    next.workspace.camera = {
-      position: [...camera.position],
-      orientation: [...camera.orientation],
-      pivot: camera.pivot ? [...camera.pivot] : null,
-      fovDegrees: camera.fovDegrees,
-      nearMeters: camera.nearMeters ?? 0.01,
-      farMeters: camera.farMeters ?? 80,
-      mode: camera.mode,
+    const draft = composition.plateDraft;
+    const previousGeometry = {
+      mode: draft.projectionMode,
+      surface: draft.surface,
+      raster: draft.raster,
+      guideSplit: draft.guideSplit,
+      horizonSplit: draft.horizonSplit,
     };
-    next.workspace.viewMode = "source-map";
+    const projectionMode = patch.projectionMode ?? draft.projectionMode;
+    const modeChanged = projectionMode !== draft.projectionMode;
+    const defaults = SOURCE_PROJECTION_DEFAULT_GUIDES[projectionMode];
+    const guideSplit = normalizeSourceInnerGuideSplit(
+      patch.guideSplit ?? (modeChanged ? defaults.innerSplit : draft.guideSplit),
+      projectionMode,
+    );
+    const horizonSplit = normalizeSourceGuideCarrierHorizonRadius(
+      projectionMode,
+      guideSplit,
+      patch.horizonSplit ?? (modeChanged ? defaults.horizonSplit : draft.horizonSplit),
+    );
+    const crossesAngularPole = modeChanged && (projectionMode === "nadir-180" || draft.projectionMode === "nadir-180");
+    const surface = normalizeProjectionSurfaceForMode(
+      patch.surface ?? (crossesAngularPole ? defaultProjectionSurface(projectionMode) : draft.surface),
+      projectionMode,
+    );
+    const raster = cloneCarrierRaster(patch.raster ?? draft.raster);
+    const nextGeometry = {
+      mode: projectionMode,
+      surface,
+      raster,
+      guideSplit,
+      horizonSplit,
+    };
+
+    if (compensatePlacements) {
+      draft.frame.plateLayers = compensateDomeScenePlateLayersForProjectionGeometryChange(
+        draft.frame.plateLayers,
+        previousGeometry,
+        nextGeometry,
+      );
+    }
+    draft.projectionMode = projectionMode;
+    draft.surface = surface;
+    draft.raster = raster;
+    draft.guideSplit = guideSplit;
+    draft.horizonSplit = horizonSplit;
+    composition.updatedAt = now;
+    if (modeChanged) {
+      const camera = defaultPlateEditorCamera(projectionMode, surface);
+      next.workspace.camera = {
+        position: [...camera.position],
+        orientation: [...camera.orientation],
+        pivot: camera.pivot ? [...camera.pivot] : null,
+        fovDegrees: camera.fovDegrees,
+        nearMeters: camera.nearMeters ?? 0.01,
+        farMeters: camera.farMeters ?? 80,
+        mode: camera.mode,
+      };
+      next.workspace.viewMode = "source-map";
+    }
   });
 }
 

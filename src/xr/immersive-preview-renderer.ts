@@ -1,6 +1,7 @@
 import type { AudienceInSpace, ImageSpatialSpec } from "../domain/schema.js";
 import { audienceVenuePlan } from "../geometry/audience-in-space.js";
 import { clamp, normalize, type Vec3 } from "../projection.js";
+import { StabilizedDeviceOrientation, zenithForwardFromRelativeDeviceOrientation } from "./device-orientation.js";
 import { buildImmersiveCarrierMesh, immersiveArPlacement, immersiveVrModelMatrix } from "./spatial-preview-mesh.js";
 
 export type ImmersivePreviewMode = "lookaround" | "immersive-vr" | "immersive-ar";
@@ -68,9 +69,8 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
     input.audience.eyeHeightMeters - plan.projectionObserver.eyeHeightMeters,
     input.audience.zMeters - plan.projectionObserver.zMeters,
   ];
-  let sensorBaseline: { alpha: number; beta: number } | null = null;
-  let sensorYaw = 0;
-  let sensorPitch = 0;
+  const sensorOrientation = new StabilizedDeviceOrientation();
+  let lastFrameTime: number | null = null;
   let receivedOrientation = false;
   let dragYaw = 0;
   let dragPitch = 0;
@@ -78,9 +78,8 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
   let wakeLock: { release: () => Promise<void> } | null = null;
 
   const recenter = () => {
-    sensorBaseline = null;
-    sensorYaw = 0;
-    sensorPitch = 0;
+    sensorOrientation.recenter();
+    lastFrameTime = null;
     dragYaw = 0;
     dragPitch = 0;
     input.onUpdate({
@@ -90,14 +89,19 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
   };
 
   const orientation = (event: DeviceOrientationEvent) => {
-    if (event.alpha === null || event.beta === null) return;
-    if (!receivedOrientation) {
+    if (event.alpha === null || event.beta === null || event.gamma === null) return;
+    const firstReading = sensorOrientation.ingest({
+      alpha: event.alpha,
+      beta: event.beta,
+      gamma: event.gamma,
+    });
+    if (firstReading) {
       receivedOrientation = true;
-      input.onUpdate({ status: `${input.label} · move the phone or drag to look around.`, sensorActive: true });
+      input.onUpdate({
+        status: `${input.label} · stabilized relative orientation active; drag also works.`,
+        sensorActive: true,
+      });
     }
-    sensorBaseline ??= { alpha: event.alpha, beta: event.beta };
-    sensorYaw = shortestAngleDegrees(event.alpha - sensorBaseline.alpha);
-    sensorPitch = clamp(event.beta - sensorBaseline.beta, -75, 75);
   };
   const pointerDown = (event: PointerEvent) => {
     pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, yaw: dragYaw, pitch: dragPitch };
@@ -121,6 +125,8 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
   input.canvas.addEventListener("pointerup", pointerEnd);
   input.canvas.addEventListener("pointercancel", pointerEnd);
   window.addEventListener("resize", resize);
+  window.addEventListener("orientationchange", resize);
+  screen.orientation?.addEventListener("change", resize);
   if (permissionState === "granted") window.addEventListener("deviceorientation", orientation, true);
   const wakeLockNavigator = navigator as WakeLockNavigator;
   if (wakeLockNavigator.wakeLock) {
@@ -136,15 +142,20 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
   input.onUpdate({
     status:
       permissionState === "granted"
-        ? `${input.label} · orientation ready; drag also works.`
+        ? `${input.label} · orientation permission granted; waiting for motion. Drag also works.`
         : `${input.label} · orientation unavailable; drag to look around.`,
     sensorActive: false,
   });
 
-  const render = () => {
+  const render = (time: number) => {
     if (ended) return;
-    const yawDegrees = input.audience.yawDegrees + sensorYaw + dragYaw;
-    const pitchDegrees = clamp(input.audience.pitchDegrees + sensorPitch + dragPitch, -88, 88);
+    const deltaMs = lastFrameTime === null ? 1000 / 60 : time - lastFrameTime;
+    lastFrameTime = time;
+    const sensorForward = zenithForwardFromRelativeDeviceOrientation(sensorOrientation.advance(deltaMs));
+    const sensorYawDegrees = Math.atan2(sensorForward[0], sensorForward[2]) * (180 / Math.PI);
+    const sensorPitchDegrees = Math.asin(clamp(sensorForward[1], -1, 1)) * (180 / Math.PI);
+    const yawDegrees = input.audience.yawDegrees + sensorYawDegrees + dragYaw;
+    const pitchDegrees = clamp(input.audience.pitchDegrees + sensorPitchDegrees + dragPitch, -88, 88);
     const forward = forwardFromEuler(yawDegrees, pitchDegrees);
     const target: Vec3 = [eye[0] + forward[0], eye[1] + forward[1], eye[2] + forward[2]];
     const projection = perspectiveMatrix(
@@ -175,6 +186,8 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
     input.canvas.removeEventListener("pointerup", pointerEnd);
     input.canvas.removeEventListener("pointercancel", pointerEnd);
     window.removeEventListener("resize", resize);
+    window.removeEventListener("orientationchange", resize);
+    screen.orientation?.removeEventListener("change", resize);
     window.removeEventListener("deviceorientation", orientation, true);
     renderer.destroy();
     await wakeLock?.release().catch(() => undefined);
@@ -506,10 +519,6 @@ function resizeCanvas(canvas: HTMLCanvasElement): void {
   const height = Math.max(1, Math.round(canvas.clientHeight * ratio));
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
-}
-
-function shortestAngleDegrees(value: number): number {
-  return ((value + 540) % 360) - 180;
 }
 
 function forwardFromEuler(yawDegrees: number, pitchDegrees: number): Vec3 {

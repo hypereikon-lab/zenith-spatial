@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { selectedComposition } from "../../domain/project.js";
+import { defaultImageSpatialSpec, selectedComposition } from "../../domain/project.js";
 import type { PlateDraft } from "../../domain/schema.js";
 import {
   audienceCameraForProjection,
@@ -30,6 +30,7 @@ import {
 } from "../../lib/shared/contracts/projection-authoring.js";
 import { SOURCE_PROJECTION_MODES, type SourceProjectionMode } from "../../lib/shared/contracts/projection-profile.js";
 import { downloadBlob } from "../../media/canvas-utils.js";
+import { embedZenithPlateMetadataInPngBlob } from "../../media/png-zenith-provenance.js";
 import { arrangePlateSketchDefaults, defaultPlateSketchPlacement } from "../../plates/plate-sketch-arrangement.js";
 import {
   beginPlateSketchEditorDrag,
@@ -691,11 +692,28 @@ export function ComposeRoom() {
     if (!session || !previewInput) return;
     try {
       const handoff = await session.renderHandoffCanvas(previewInput, draft.raster);
-      const blob = await new Promise<Blob>((resolve, reject) =>
+      const encodedBlob = await new Promise<Blob>((resolve, reject) =>
         handoff.toBlob((result) => (result ? resolve(result) : reject(new Error("PNG encoding failed."))), "image/png"),
       );
+      const spatialSpec = {
+        ...defaultImageSpatialSpec(draft),
+        sourceWidth: draft.raster.width,
+        sourceHeight: draft.raster.height,
+        sourceAspectRatio: draft.raster.width / draft.raster.height,
+      };
+      const blob = await embedZenithPlateMetadataInPngBlob(encodedBlob, {
+        version: 1,
+        kind: "plate-draft",
+        projectId: snapshot.document.project.id,
+        compositionId: composition.id,
+        plateCommitId: null,
+        createdAt: new Date().toISOString(),
+        draft: structuredClone(draft),
+        spatialSpec,
+        provenance: null,
+      });
       downloadBlob(blob, `zenith-plate-sketch-${draft.raster.width}x${draft.raster.height}.png`);
-      setStatus("Exact Plate Sketch PNG downloaded.");
+      setStatus("Exact Plate Sketch PNG downloaded with Zenith spatial metadata.");
     } catch (error) {
       reportError(error, "plate-download");
     }

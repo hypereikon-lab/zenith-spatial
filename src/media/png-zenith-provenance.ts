@@ -1,8 +1,48 @@
 import * as Schema from "effect/Schema";
 
-import { ImageGenerationProvenanceSchema, type ImageGenerationProvenance } from "../domain/schema.js";
+import {
+  ImageGenerationProvenanceSchema,
+  ImageSpatialSpecSchema,
+  PlateCommitProvenanceSchema,
+  PlateDraftSchema,
+  type ImageGenerationProvenance,
+} from "../domain/schema.js";
 
 export const ZENITH_PNG_PROVENANCE_KEYWORD = "zenith.spatial.v1";
+export const ZENITH_PNG_PLATE_KEYWORD = "zenith.plate.v1";
+
+export const ZenithPlatePngMetadataSchema = Schema.mutable(
+  Schema.Struct({
+    version: Schema.Literal(1),
+    kind: Schema.Literal("plate-draft", "plate-commit"),
+    projectId: Schema.String.pipe(Schema.minLength(1)),
+    compositionId: Schema.String.pipe(Schema.minLength(1)),
+    plateCommitId: Schema.NullOr(Schema.String.pipe(Schema.minLength(1))),
+    createdAt: Schema.String.pipe(Schema.minLength(1)),
+    draft: PlateDraftSchema,
+    spatialSpec: ImageSpatialSpecSchema,
+    provenance: Schema.NullOr(PlateCommitProvenanceSchema),
+  }),
+).pipe(
+  Schema.filter((metadata) => {
+    const issues: Schema.FilterIssue[] = [];
+    if ((metadata.kind === "plate-commit") !== (metadata.plateCommitId !== null)) {
+      issues.push({ path: ["plateCommitId"], message: "Plate Commit metadata must carry its commit id" });
+    }
+    if ((metadata.kind === "plate-commit") !== (metadata.provenance !== null)) {
+      issues.push({ path: ["provenance"], message: "Only Plate Commit metadata carries commit provenance" });
+    }
+    if (
+      metadata.draft.raster.width !== metadata.spatialSpec.targetWidth ||
+      metadata.draft.raster.height !== metadata.spatialSpec.targetHeight
+    ) {
+      issues.push({ path: ["spatialSpec"], message: "Plate metadata spatial target must match its raster" });
+    }
+    return issues;
+  }),
+);
+
+export type ZenithPlatePngMetadata = Schema.Schema.Type<typeof ZenithPlatePngMetadataSchema>;
 
 const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 const textEncoder = new TextEncoder();
@@ -21,16 +61,30 @@ export function embedZenithPngProvenance(bytes: Uint8Array, provenance: ImageGen
   const parsed = Schema.decodeUnknownSync(ImageGenerationProvenanceSchema)(provenance, {
     onExcessProperty: "error",
   });
+  return embedInternationalText(bytes, ZENITH_PNG_PROVENANCE_KEYWORD, JSON.stringify(parsed));
+}
+
+export function embedZenithPlatePngMetadata(bytes: Uint8Array, metadata: ZenithPlatePngMetadata): Uint8Array {
+  const parsed = Schema.decodeUnknownSync(ZenithPlatePngMetadataSchema)(metadata, {
+    onExcessProperty: "error",
+  });
+  return embedInternationalText(bytes, ZENITH_PNG_PLATE_KEYWORD, JSON.stringify(parsed));
+}
+
+export async function embedZenithPlateMetadataInPngBlob(blob: Blob, metadata: ZenithPlatePngMetadata): Promise<Blob> {
+  const bytes = embedZenithPlatePngMetadata(new Uint8Array(await blob.arrayBuffer()), metadata);
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  return new Blob([buffer], { type: "image/png" });
+}
+
+function embedInternationalText(bytes: Uint8Array, keyword: string, text: string): Uint8Array {
   const chunks = parsePngChunks(bytes);
-  const metadataChunk = createChunk("iTXt", encodeInternationalText(JSON.stringify(parsed)));
+  const metadataChunk = createChunk("iTXt", encodeInternationalText(keyword, text));
   const output: Uint8Array[] = [PNG_SIGNATURE];
   let inserted = false;
 
   for (const chunk of chunks) {
-    if (
-      chunk.type === "iTXt" &&
-      internationalTextKeyword(bytes.subarray(chunk.dataStart, chunk.dataEnd)) === ZENITH_PNG_PROVENANCE_KEYWORD
-    ) {
+    if (chunk.type === "iTXt" && internationalTextKeyword(bytes.subarray(chunk.dataStart, chunk.dataEnd)) === keyword) {
       continue;
     }
     if (chunk.type === "IEND" && !inserted) {
@@ -45,18 +99,33 @@ export function embedZenithPngProvenance(bytes: Uint8Array, provenance: ImageGen
 }
 
 export function readZenithPngProvenance(bytes: Uint8Array): ImageGenerationProvenance | null {
+  const value = readInternationalText(bytes, ZENITH_PNG_PROVENANCE_KEYWORD);
+  return value === null
+    ? null
+    : Schema.decodeUnknownSync(ImageGenerationProvenanceSchema)(JSON.parse(value) as unknown, {
+        onExcessProperty: "error",
+      });
+}
+
+export function readZenithPlatePngMetadata(bytes: Uint8Array): ZenithPlatePngMetadata | null {
+  const value = readInternationalText(bytes, ZENITH_PNG_PLATE_KEYWORD);
+  return value === null
+    ? null
+    : Schema.decodeUnknownSync(ZenithPlatePngMetadataSchema)(JSON.parse(value) as unknown, {
+        onExcessProperty: "error",
+      });
+}
+
+function readInternationalText(bytes: Uint8Array, keyword: string): string | null {
   for (const chunk of parsePngChunks(bytes)) {
     if (chunk.type !== "iTXt") continue;
     const data = bytes.subarray(chunk.dataStart, chunk.dataEnd);
-    if (internationalTextKeyword(data) !== ZENITH_PNG_PROVENANCE_KEYWORD) continue;
+    if (internationalTextKeyword(data) !== keyword) continue;
     const typeBytes = bytes.subarray(chunk.start + 4, chunk.start + 8);
     if (crc32(concatenateBytes([typeBytes, data])) !== chunk.crc) {
       throw new Error("Zenith PNG provenance has an invalid checksum.");
     }
-    return Schema.decodeUnknownSync(ImageGenerationProvenanceSchema)(
-      JSON.parse(decodeInternationalText(data)) as unknown,
-      { onExcessProperty: "error" },
-    );
+    return decodeInternationalText(data);
   }
   return null;
 }
@@ -71,6 +140,12 @@ export async function readZenithProvenanceFromPngBlob(blob: Blob): Promise<Image
   const bytes = new Uint8Array(await blob.arrayBuffer());
   if (!hasPngSignature(bytes)) return null;
   return readZenithPngProvenance(bytes);
+}
+
+export async function readZenithPlateMetadataFromPngBlob(blob: Blob): Promise<ZenithPlatePngMetadata | null> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  if (!hasPngSignature(bytes)) return null;
+  return readZenithPlatePngMetadata(bytes);
 }
 
 function parsePngChunks(bytes: Uint8Array): PngChunk[] {
@@ -112,12 +187,8 @@ function createChunk(type: string, data: Uint8Array): Uint8Array {
   return chunk;
 }
 
-function encodeInternationalText(text: string): Uint8Array {
-  return concatenateBytes([
-    textEncoder.encode(ZENITH_PNG_PROVENANCE_KEYWORD),
-    new Uint8Array([0, 0, 0, 0, 0]),
-    textEncoder.encode(text),
-  ]);
+function encodeInternationalText(keyword: string, text: string): Uint8Array {
+  return concatenateBytes([textEncoder.encode(keyword), new Uint8Array([0, 0, 0, 0, 0]), textEncoder.encode(text)]);
 }
 
 function decodeInternationalText(data: Uint8Array): string {

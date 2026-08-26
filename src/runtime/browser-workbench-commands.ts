@@ -16,7 +16,11 @@ import {
 } from "../domain/project.js";
 import type { ImageTake, MediaAsset, PlateCommit, PlateDraft } from "../domain/schema.js";
 import { canvasToBlob } from "../media/canvas-utils.js";
-import { readZenithProvenanceFromPngBlob } from "../media/png-zenith-provenance.js";
+import {
+  embedZenithPlateMetadataInPngBlob,
+  readZenithPlateMetadataFromPngBlob,
+  readZenithProvenanceFromPngBlob,
+} from "../media/png-zenith-provenance.js";
 import { defaultPlateSketchPlacement } from "../plates/plate-sketch-arrangement.js";
 import { DEFAULT_PLATE_REFERENCES } from "../plates/default-plate-profile.js";
 import type { PlateSketchPreviewInput, PlateSketchPreviewSession } from "../plates/plate-sketch-preview-session.js";
@@ -313,7 +317,7 @@ export function commitPlate(
         }),
       );
     }
-    const blob = yield* Effect.tryPromise({
+    const encodedBlob = yield* Effect.tryPromise({
       try: () => canvasToBlob(handoff, "image/png"),
       catch: (cause) =>
         new BrowserWorkbenchError({ operation: "commit", message: "Plate Sketch PNG encoding failed.", cause }),
@@ -353,6 +357,26 @@ export function commitPlate(
         draftFingerprint: plateDraftFingerprint(draft),
       },
     };
+    const blob = yield* Effect.tryPromise({
+      try: () =>
+        embedZenithPlateMetadataInPngBlob(encodedBlob, {
+          version: 1,
+          kind: "plate-commit",
+          projectId: snapshot.document.project.id,
+          compositionId: composition.id,
+          plateCommitId: commit.id,
+          createdAt: now,
+          draft: commit.draft,
+          spatialSpec: commit.spatialSpec,
+          provenance: commit.provenance,
+        }),
+      catch: (cause) =>
+        new BrowserWorkbenchError({
+          operation: "commit",
+          message: "Plate Sketch spatial metadata could not be embedded.",
+          cause,
+        }),
+    });
     yield* repository.put(mediaId, { blob, canvas: handoff });
     yield* workbench
       .updateDocument((document) => addPlateCommit(document, media, commit, now))
@@ -372,15 +396,22 @@ export function importPlateCommit(file: File) {
     const repository = yield* MediaRepository;
     const ids = yield* IdGenerator;
     const dimensions = yield* decodeImageDimensions(file, "commit");
+    const embeddedMetadata = yield* Effect.tryPromise({
+      try: () => readZenithPlateMetadataFromPngBlob(file),
+      catch: () => null,
+    });
     const now = new Date(yield* Clock.currentTimeMillis).toISOString();
     const snapshot = workbench.getSnapshot();
     const composition = selectedComposition(snapshot.document);
-    const raster = composition.plateDraft.raster;
-    if (dimensions.width !== raster.width || dimensions.height !== raster.height) {
+    const embeddedDraft = embeddedMetadata?.draft;
+    const draft = structuredClone(embeddedDraft ?? composition.plateDraft);
+    const expectedWidth = embeddedMetadata?.spatialSpec.targetWidth ?? draft.raster.width;
+    const expectedHeight = embeddedMetadata?.spatialSpec.targetHeight ?? draft.raster.height;
+    if (dimensions.width !== expectedWidth || dimensions.height !== expectedHeight) {
       return yield* Effect.fail(
         new BrowserWorkbenchError({
           operation: "commit",
-          message: `Imported Plate Sketch is ${dimensions.width}×${dimensions.height}; the active carrier requires exactly ${raster.width}×${raster.height} pixels.`,
+          message: `Imported Plate Sketch is ${dimensions.width}×${dimensions.height}; its carrier requires exactly ${expectedWidth}×${expectedHeight} pixels.`,
         }),
       );
     }
@@ -402,9 +433,9 @@ export function importPlateCommit(file: File) {
       label: `Imported Plate Commit ${composition.plateCommits.length + 1}`,
       createdAt: now,
       mediaAssetId: mediaId,
-      draft: structuredClone(composition.plateDraft),
+      draft,
       spatialSpec: {
-        ...defaultImageSpatialSpec(composition.plateDraft),
+        ...(embeddedMetadata?.spatialSpec ?? defaultImageSpatialSpec(draft)),
         sourceWidth: dimensions.width,
         sourceHeight: dimensions.height,
         sourceAspectRatio: dimensions.width / dimensions.height,
@@ -413,8 +444,10 @@ export function importPlateCommit(file: File) {
         version: 1,
         projectId: snapshot.document.project.id,
         compositionId: composition.id,
-        sourceAssetIds: [...composition.sourceAssetIds],
-        draftFingerprint: plateDraftFingerprint(composition.plateDraft),
+        sourceAssetIds:
+          embeddedMetadata?.provenance?.sourceAssetIds ??
+          draft.frame.plateLayers.flatMap((layer) => (layer.source.assetId ? [layer.source.assetId] : [])),
+        draftFingerprint: embeddedMetadata?.provenance?.draftFingerprint ?? plateDraftFingerprint(draft),
       },
     };
     yield* repository.put(mediaId, { blob: file, file });

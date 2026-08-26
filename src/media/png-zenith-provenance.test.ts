@@ -3,9 +3,12 @@ import { carrierRasterForAspect, defaultProjectionSurface } from "../lib/shared/
 import { createInitialZenithDocument, defaultImageSpatialSpec, selectedComposition } from "../domain/project.js";
 import type { ImageGenerationProvenance } from "../domain/schema.js";
 import {
+  embedZenithPlatePngMetadata,
   embedZenithPngProvenance,
+  readZenithPlatePngMetadata,
   readZenithPngProvenance,
   readZenithProvenanceFromPngDataUrl,
+  type ZenithPlatePngMetadata,
 } from "./png-zenith-provenance.js";
 
 const ONE_PIXEL_PNG =
@@ -36,6 +39,25 @@ describe("Zenith PNG spatial provenance", () => {
     expect(readZenithProvenanceFromPngDataUrl(dataUrl)).toEqual(provenance("cave-270"));
   });
 
+  test("embeds a portable Plate Draft contract alongside generated-image provenance", () => {
+    const original = dataUrlBytes(ONE_PIXEL_PNG);
+    const plate = plateMetadata("cave-270");
+    const withPlate = embedZenithPlatePngMetadata(original, plate);
+    const withBoth = embedZenithPngProvenance(withPlate, provenance("cave-270"));
+
+    expect(readZenithPlatePngMetadata(withBoth)).toEqual(plate);
+    expect(readZenithPngProvenance(withBoth)).toEqual(provenance("cave-270"));
+  });
+
+  test("replaces stale Plate metadata without accumulating chunks", () => {
+    const first = embedZenithPlatePngMetadata(dataUrlBytes(ONE_PIXEL_PNG), plateMetadata("cave-270"));
+    const nextMetadata = plateMetadata("cylinder-nadir");
+    const second = embedZenithPlatePngMetadata(first, nextMetadata);
+
+    expect(readZenithPlatePngMetadata(second)).toEqual(nextMetadata);
+    expect(second.length).toBeLessThan(first.length + JSON.stringify(nextMetadata).length + 200);
+  });
+
   test("rejects bytes that only claim to be PNG", () => {
     expect(() => embedZenithPngProvenance(new Uint8Array([1, 2, 3]), provenance("cave-270"))).toThrow(/PNG signature/);
   });
@@ -57,6 +79,30 @@ function provenance(projectionMode: "cylinder-nadir" | "cave-270"): ImageGenerat
     model: "gpt_image_2",
     carrierRaster,
     spatialSpec: defaultImageSpatialSpec(draft),
+  };
+}
+
+function plateMetadata(projectionMode: "cylinder-nadir" | "cave-270"): ZenithPlatePngMetadata {
+  const document = createInitialZenithDocument();
+  const composition = selectedComposition(document);
+  const draft = structuredClone(composition.plateDraft);
+  draft.projectionMode = projectionMode;
+  draft.surface = defaultProjectionSurface(projectionMode);
+  draft.raster = carrierRasterForAspect("16:9");
+  return {
+    version: 1,
+    kind: "plate-draft",
+    projectId: document.project.id,
+    compositionId: composition.id,
+    plateCommitId: null,
+    createdAt: "2026-08-26T12:00:00.000Z",
+    draft,
+    spatialSpec: {
+      ...defaultImageSpatialSpec(draft),
+      sourceWidth: draft.raster.width,
+      sourceHeight: draft.raster.height,
+    },
+    provenance: null,
   };
 }
 

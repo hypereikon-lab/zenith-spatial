@@ -9,6 +9,8 @@ Zenith is a local spatial-image authoring instrument for fulldome and other imme
 
 Compose and Review include an **Audience in Space** view: a perspective POV from a movable person whose X/Z position, eye height, facing, and field of view are expressed in meters. Measured rooms use their authored dimensions; angular carriers receive a workspace-only physical dome radius. Audience movement is inspection state and never changes Plate placement or projection mapping.
 
+Review also exposes **Immersive Preview** from the same pinned spatial specification. Phone Lookaround uses orientation sensors when permission is available and keeps touch drag as a universal fallback. Compatible WebXR headsets enter the carrier at 1:1 scale from the authored audience X/Z/facing; the physical headset supplies head height and local movement. Compatible AR devices place a bounded carrier scale model using hit testing. XR poses, placement candidates, frame loops, and controller state are runtime-only and are never written into the project.
+
 Zenith supports multiple independent Compositions, but it is not a timeline, NLE, generic workflow engine, dashboard, or deployment platform.
 
 ## Architecture
@@ -18,6 +20,7 @@ Zenith supports multiple independent Compositions, but it is not a timeline, NLE
 - **Effect Schema** defines the portable project, composition, media, commit, take, generation, carrier, and API boundaries.
 - **Effect Platform Node** serves the production client and the generation API. Secrets, paid validation, confirmation grants, provider calls, durable job state, cancellation, and outputs remain server-side.
 - **Pure TypeScript + TypeGPU/WGSL** retain geometry, projection transforms, plate composition, guide kernels, shader parity, and deterministic reducers without Effect wrappers.
+- A scoped **WebXR + WebGL 2 presentation adapter** reuses the portable carrier mesh and projection UV contracts. It is loaded only when Immersive Preview starts; the primary workstation renderer remains TypeGPU/WebGPU.
 
 The main source boundaries are:
 
@@ -60,7 +63,27 @@ npm run build
 npm start
 ```
 
-`npm start` serves `dist/client` and the API together at `http://127.0.0.1:4173`.
+### Phones and headsets
+
+Immersive modes are capability-detected rather than inferred from a user-agent string:
+
+- Every supported browser gets Phone Lookaround; orientation permission augments the touch view when available.
+- Meta Quest and other compatible headsets get `immersive-vr` at physical scale.
+- Browsers exposing `immersive-ar` get a hit-tested AR scale model. Current iPhone/iPad Safari remains on Phone Lookaround because it does not expose the same immersive AR session.
+
+WebXR and mobile orientation access require a secure context. `localhost` is sufficient on the same computer, but another device needs a hostname and certificate it trusts. Zenith can serve its production build over optional local TLS without a cloud deployment:
+
+```sh
+npm run build
+ZENITH_HOST=0.0.0.0 \
+ZENITH_TLS_CERT_PATH=/absolute/path/to/zenith-local.pem \
+ZENITH_TLS_KEY_PATH=/absolute/path/to/zenith-local-key.pem \
+npm start
+```
+
+Open the resulting trusted `https://<local-hostname>:4173` URL on the phone or headset. Generate the certificate for the actual LAN hostname with a local CA such as `mkcert`, trust that CA on the target device, and never commit certificate private keys. An untrusted self-signed warning does not provide a dependable WebXR secure context.
+
+By default, `npm start` serves `dist/client` and the API together at `http://127.0.0.1:4173`; configuring both TLS paths switches that server to HTTPS.
 
 Checks:
 
@@ -81,11 +104,14 @@ Copy `.env.example` to `.env.local` for local configuration. The server scripts 
 - `ZENITH_HOST`, `ZENITH_PORT`: local bind address (defaults `127.0.0.1:4173`).
 - `ZENITH_RUNTIME_DIR`: durable job journal and output directory (defaults `.zenith-runtime`).
 - `ZENITH_CLIENT_DIR`: built client directory (defaults `dist/client`).
+- `ZENITH_TLS_CERT_PATH`, `ZENITH_TLS_KEY_PATH`: optional local HTTPS certificate and private-key paths; configure both or neither.
 
 Every paid action requires a short-lived, one-use confirmation grant bound to the project and an input digest. The server validates the request and exact raster before invoking the provider. Tests use test Layers and never perform paid calls.
 
 ## Current limits
 
 - Spatial projection review requires WebGPU; exact-pixel review remains available independently.
+- Immersive Preview requires WebGL 2. VR/AR buttons appear only after successful WebXR capability detection; hardware acceptance still requires the target phone or headset.
+- iOS/iPadOS currently receive Phone Lookaround rather than `immersive-ar`; no polyfill can supply a session the browser withholds.
 - Venue geometry is not yet a projector-by-projector calibration/export system.
 - Runway is the only paid provider implementation, behind a replaceable Effect service boundary.

@@ -6,6 +6,8 @@ export interface ZenithServerConfigService {
   readonly port: number;
   readonly clientDirectory: string;
   readonly runtimeDirectory: string;
+  readonly tlsCertificatePath: string;
+  readonly tlsPrivateKeyPath: string;
   readonly runwayApiSecret: string;
   readonly runwayApiBase: string;
   readonly runwayApiVersion: string;
@@ -28,6 +30,8 @@ export class ZenithServerConfig extends Context.Tag("zenith/server/Config")<
       runtimeDirectory: Config.string("ZENITH_RUNTIME_DIR").pipe(
         Config.withDefault(resolve(process.cwd(), ".zenith-runtime")),
       ),
+      tlsCertificatePath: Config.string("ZENITH_TLS_CERT_PATH").pipe(Config.withDefault("")),
+      tlsPrivateKeyPath: Config.string("ZENITH_TLS_KEY_PATH").pipe(Config.withDefault("")),
       runwayApiSecret: Config.string("RUNWAYML_API_SECRET").pipe(Config.withDefault("")),
       runwayApiBase: Config.string("RUNWAY_API_BASE").pipe(Config.withDefault("https://api.dev.runwayml.com")),
       runwayApiVersion: Config.string("RUNWAY_API_VERSION").pipe(Config.withDefault("2024-11-06")),
@@ -50,6 +54,8 @@ export class ZenithServerConfig extends Context.Tag("zenith/server/Config")<
       port: 0,
       clientDirectory: resolve(process.cwd(), "dist/client"),
       runtimeDirectory: resolve(process.cwd(), ".zenith-runtime-test"),
+      tlsCertificatePath: "",
+      tlsPrivateKeyPath: "",
       runwayApiSecret: "",
       runwayApiBase: "https://example.invalid",
       runwayApiVersion: "test",

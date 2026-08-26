@@ -1,7 +1,9 @@
 import { HttpServer } from "@effect/platform";
 import { NodeFileSystem, NodeHttpServer, NodeRuntime } from "@effect/platform-node";
 import { Effect, Layer } from "effect";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { createServer as createSecureServer } from "node:https";
 
 import { IdGenerator } from "../src/runtime/id-service.js";
 import { zenithRouter } from "./api.js";
@@ -30,7 +32,7 @@ const ApplicationServicesLive = Layer.mergeAll(
 
 const HttpServerLive = Layer.unwrapEffect(
   Effect.map(ZenithServerConfig, (config) =>
-    NodeHttpServer.layer(() => createServer(), { host: config.host, port: config.port }),
+    NodeHttpServer.layer(() => createZenithNodeServer(config), { host: config.host, port: config.port }),
   ),
 ).pipe(Layer.provide(InfrastructureLive));
 
@@ -39,3 +41,16 @@ const ApplicationLive = zenithRouter
   .pipe(Layer.provide(ApplicationServicesLive), Layer.provide(HttpServerLive));
 
 Layer.launch(ApplicationLive).pipe(NodeRuntime.runMain);
+
+function createZenithNodeServer(config: ZenithServerConfig["Type"]) {
+  const certificatePath = config.tlsCertificatePath.trim();
+  const privateKeyPath = config.tlsPrivateKeyPath.trim();
+  if (!certificatePath && !privateKeyPath) return createServer();
+  if (!certificatePath || !privateKeyPath) {
+    throw new Error("ZENITH_TLS_CERT_PATH and ZENITH_TLS_KEY_PATH must be configured together.");
+  }
+  return createSecureServer({
+    cert: readFileSync(certificatePath),
+    key: readFileSync(privateKeyPath),
+  });
+}

@@ -26,12 +26,14 @@ export function ImmersivePreviewPanel({
   audience,
   label,
   contentKey,
+  presentation = "panel",
 }: {
   readonly mediaUrl: string | null;
   readonly spec: ImageSpatialSpec | null;
   readonly audience: AudienceInSpace;
   readonly label: string;
   readonly contentKey: string;
+  readonly presentation?: "panel" | "demo-route";
 }) {
   const run = useEffectRunner();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -157,7 +159,13 @@ export function ImmersivePreviewPanel({
   const unavailableReason = !mediaUrl || !spec ? "Select review media first." : null;
   return (
     <>
-      <div className="panel-section immersive-preview-panel">
+      <div
+        className={
+          presentation === "demo-route"
+            ? "panel-section immersive-preview-panel is-demo-route"
+            : "panel-section immersive-preview-panel"
+        }
+      >
         <div className="immersive-heading">
           <div>
             <h3>Immersive preview</h3>
@@ -182,13 +190,15 @@ export function ImmersivePreviewPanel({
             active={activeMode === "immersive-vr"}
             onClick={() => launch("immersive-vr")}
           />
-          <ImmersiveModeButton
-            label="Place AR Model"
-            detail="WebXR hit test"
-            available={!checking && !unavailableReason && capabilities.ar}
-            active={activeMode === "immersive-ar"}
-            onClick={() => launch("immersive-ar")}
-          />
+          {presentation === "panel" ? (
+            <ImmersiveModeButton
+              label="Place AR Model"
+              detail="WebXR hit test"
+              available={!checking && !unavailableReason && capabilities.ar}
+              active={activeMode === "immersive-ar"}
+              onClick={() => launch("immersive-ar")}
+            />
+          ) : null}
         </div>
         <p className="immersive-support-readout" aria-live="polite">
           {checking ? "Detecting WebXR modes…" : (unavailableReason ?? status)}

@@ -9,7 +9,7 @@ Zenith is a local spatial-image authoring instrument for fulldome and other imme
 
 **Add media** is the direct path around that Plate workflow: it imports an image as standalone Review media, opens its exact pixels immediately, and leaves Plate layers, commits, and generation state untouched. The imported bytes remain part of local and cloud `.zenith` saves and may still be inspected through the current carrier when a spatial preview is useful.
 
-Every new browser workspace also includes **Demo · Forest Domemaster 180°**, the exact 1920 × 1920 equidistant domemaster under `public/demo-media`. It is selected as standalone media but does not enter the Plate Draft. Open Review to inspect it immediately as pixels or a dome, then use Immersive Preview for Phone Lookaround or compatible WebXR without generating or importing first.
+Every new browser workspace also includes **Demo · Forest Domemaster 180°**, the exact 1920 × 1920 equidistant domemaster under `public/demo-media`. It is selected as standalone media but does not enter the Plate Draft. Open Review to inspect it immediately as pixels or a dome, then use Immersive Preview for Phone Lookaround or compatible WebXR without generating or importing first. The public `/demo/vr` route opens that same media in a focused mobile launcher without navigating through the Workbench.
 
 The **physical horizon** is derived rather than freely authored: angular carriers use observer level at `0°`; CAVE, measured hall, and cylinder carriers use the projection observer's eye height above the venue floor. Compose keeps that guide visible and edits the measured observer height directly. A non-zero deviation is available only as an explicit advanced installation calibration. **Align image horizon** is a separate Plate-map control that changes where image pixels are allocated around the physical guide and compensates Plate placement through physical space.
 
@@ -25,7 +25,7 @@ Zenith supports multiple independent Compositions, but it is not a timeline, NLE
 - **React 19 + Vite** render the workstation. React subscribes through `useSyncExternalStore`, dispatches Effect programs, owns canvas/pointer wiring, and keeps only interaction-local UI state.
 - **Effect Schema** defines the portable project, composition, media, commit, take, generation, carrier, and API boundaries.
 - **Effect Platform Node** serves the production client and the generation API. Secrets, paid validation, confirmation grants, provider calls, durable job state, cancellation, and outputs remain server-side.
-- The optional private **ChatGPT Site Worker** runs the same React workbench with an Effect 3 request boundary. ChatGPT identity scopes a D1 project index and exact `.zenith` archives in R2; optimistic revisions prevent accidental cross-device overwrites.
+- The optional **ChatGPT Site Worker** runs the same React workbench with an Effect 3 request boundary. ChatGPT identity scopes a D1 project index and exact `.zenith` archives in R2; optimistic revisions prevent accidental cross-device overwrites.
 - **Pure TypeScript + TypeGPU/WGSL** retain geometry, projection transforms, plate composition, guide kernels, shader parity, and deterministic reducers without Effect wrappers.
 - A scoped **WebXR + WebGL 2 presentation adapter** reuses the portable carrier mesh and projection UV contracts. It is loaded only when Immersive Preview starts; the primary workstation renderer remains TypeGPU/WebGPU.
 
@@ -41,7 +41,7 @@ The main source boundaries are:
 | `src/media`                   | Image normalization, PNG provenance, downloads, and archive container                                                           |
 | `src/inpaint`                 | Projection-aware generation prompt compiler; inpaint is a strategy, not an application room                                     |
 | `server`                      | Effect Platform Node API, paid confirmation, jobs, provider boundary, persistence, and static serving                           |
-| `site-worker`, `drizzle`      | Private Sites identity boundary, D1 project revisions, R2 archive storage, and its SQL migration                                |
+| `site-worker`, `drizzle`      | Sites identity boundary, D1 project revisions, R2 archive storage, and its SQL migration                                        |
 
 See [projection carriers](docs/projection-carriers.md) for the carrier and rendering contracts.
 
@@ -102,7 +102,7 @@ npm test
 npm run build
 ```
 
-## Private ChatGPT Site
+## ChatGPT Site
 
 The Site is a second delivery mode for the same Vite/React workstation, not a fork of the product. It keeps Compose, direct Add media review, exact Plate Commit/download, imported Image Takes, spatial Review, Audience in Space, Phone Lookaround, and capability-detected WebXR. After ChatGPT sign-in, **Site** in the header can save, load, revision, and delete private projects. Each remote revision is the normal binary `.zenith` archive, so media bytes and multi-composition integrity are identical to local Save/Open.
 
@@ -111,7 +111,7 @@ npm ci
 npm run dev:site
 ```
 
-The local Sites adapter runs at `http://127.0.0.1:5173` and provides a local test sign-in. A production Site is HTTPS and owner-only by default, which also supplies the secure context required by supported orientation and WebXR modes.
+The local Sites adapter runs at `http://127.0.0.1:5173` and provides a local test sign-in. A production Site is HTTPS, which supplies the secure context required by supported orientation and WebXR modes; its public or shared access policy is managed by Sites rather than source code.
 
 Build and package checks:
 

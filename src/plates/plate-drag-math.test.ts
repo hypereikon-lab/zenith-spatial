@@ -28,11 +28,22 @@ describe("plate spherical drag math", () => {
     const currentPointer = fisheyeUvToDirection(0.72, 0.38, projection);
     if (!startPointer || !currentPointer) throw new Error("Expected valid source pointer directions");
 
-    const startPlacement = preparePlatePlacement({ azimuth: -24, radius: 0.42, scale: 0.55 }, { aspect: 1 }, "zenith-180");
+    const startPlacement = preparePlatePlacement(
+      { azimuth: -24, radius: 0.42, scale: 0.55 },
+      { aspect: 1 },
+      "zenith-180",
+    );
     const moved = moveDomePointBySourcePointerDrag(startPlacement.center, startPointer, currentPointer, "zenith-180");
-    const movedPlacement = preparePlatePlacement({ ...startPlacement, azimuth: moved.azimuth, radius: moved.radius }, { aspect: 1 }, "zenith-180");
+    const movedPlacement = preparePlatePlacement(
+      { ...startPlacement, azimuth: moved.azimuth, radius: moved.radius },
+      { aspect: 1 },
+      "zenith-180",
+    );
 
-    expect(angularDistance(startPlacement.center, startPointer)).toBeCloseTo(angularDistance(movedPlacement.center, currentPointer), 6);
+    expect(angularDistance(startPlacement.center, startPointer)).toBeCloseTo(
+      angularDistance(movedPlacement.center, currentPointer),
+      6,
+    );
   });
 
   test("uses the same source-direction drag model for flat and projected editor views", () => {
@@ -42,7 +53,12 @@ describe("plate spherical drag math", () => {
     if (!startPointer || !currentPointer) throw new Error("Expected valid source pointer directions");
 
     const fromFlatMap = moveDomePointBySourcePointerDrag(startPointer, startPointer, currentPointer, "zenith-180");
-    const fromProjectedDome = moveDomePointBySourcePointerDrag(startPointer, startPointer, currentPointer, "zenith-180");
+    const fromProjectedDome = moveDomePointBySourcePointerDrag(
+      startPointer,
+      startPointer,
+      currentPointer,
+      "zenith-180",
+    );
 
     expect(fromFlatMap.azimuth).toBeCloseTo(fromProjectedDome.azimuth, 8);
     expect(fromFlatMap.radius).toBeCloseTo(fromProjectedDome.radius, 8);

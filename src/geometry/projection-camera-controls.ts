@@ -51,7 +51,7 @@ export function cloneCameraRigPose<Mode extends string>(pose: CameraRigPose<Mode
     ...pose,
     position: [...pose.position] as Vec3,
     orientation: [...pose.orientation],
-    pivot: pose.pivot ? [...pose.pivot] as Vec3 : pose.pivot,
+    pivot: pose.pivot ? ([...pose.pivot] as Vec3) : pose.pivot,
   });
 }
 
@@ -75,28 +75,16 @@ export function applyProjectionCameraPointerDrag<Mode extends string>(
   const dy = input.currentPoint.y - input.startPoint.y;
   if (intent === "pan") {
     const metersPerPixel = panMetersPerPixel(input.startCamera, input.viewport);
-    return panProjectionCameraLocal(
-      input.startCamera,
-      -dx * metersPerPixel,
-      dy * metersPerPixel,
-    );
+    return panProjectionCameraLocal(input.startCamera, -dx * metersPerPixel, dy * metersPerPixel);
   }
   if (intent === "dolly") {
     const amount = -dy * dollyMetersPerPixel(input.startCamera, input.viewport);
     return dollyProjectionCamera(input.startCamera, input.viewMode, amount);
   }
   if (intent === "orbit") {
-    return orbitCameraAroundPivot(
-      input.startCamera,
-      -dx * ORBIT_DEGREES_PER_PIXEL,
-      -dy * ORBIT_DEGREES_PER_PIXEL
-    );
+    return orbitCameraAroundPivot(input.startCamera, -dx * ORBIT_DEGREES_PER_PIXEL, -dy * ORBIT_DEGREES_PER_PIXEL);
   }
-  return rotateCameraEuler(
-    input.startCamera,
-    dx * LOOK_DEGREES_PER_PIXEL,
-    dy * LOOK_DEGREES_PER_PIXEL
-  );
+  return rotateCameraEuler(input.startCamera, dx * LOOK_DEGREES_PER_PIXEL, dy * LOOK_DEGREES_PER_PIXEL);
 }
 
 export function applyProjectionCameraWheel<Mode extends string>(
@@ -104,7 +92,7 @@ export function applyProjectionCameraWheel<Mode extends string>(
 ): CameraRigPose<Mode> {
   if (input.viewMode === "source-map") return cloneCameraRigPose(input.camera);
   const distance = cameraFocusDistance(input.camera);
-  const rawAmount = -input.deltaY * WHEEL_DISTANCE_FRACTION * Math.max(0.08, distance) / 120;
+  const rawAmount = (-input.deltaY * WHEEL_DISTANCE_FRACTION * Math.max(0.08, distance)) / 120;
   const amount = clamp(rawAmount, -distance * 0.65, distance * 0.65);
   return dollyProjectionCamera(input.camera, input.viewMode, amount);
 }
@@ -185,14 +173,20 @@ export function projectionCameraControlHelp(viewMode: ProjectionCameraViewMode):
   return `${primary} Shift or middle-drag pans. Option or right-drag dollies. Wheel zooms the orthographic view.`;
 }
 
-function panMetersPerPixel<Mode extends string>(pose: CameraRigPose<Mode>, viewport: { width: number; height: number }): number {
+function panMetersPerPixel<Mode extends string>(
+  pose: CameraRigPose<Mode>,
+  viewport: { width: number; height: number },
+): number {
   const distance = cameraFocusDistance(pose);
   const height = Math.max(1, viewport.height);
   const visibleHeight = Math.max(0.08, distance) * ORTHOGRAPHIC_VIEW_HEIGHT_PER_DISTANCE;
   return (visibleHeight * PAN_WORLD_FRACTION_PER_VIEW_HEIGHT) / height;
 }
 
-function dollyMetersPerPixel<Mode extends string>(pose: CameraRigPose<Mode>, viewport: { width: number; height: number }): number {
+function dollyMetersPerPixel<Mode extends string>(
+  pose: CameraRigPose<Mode>,
+  viewport: { width: number; height: number },
+): number {
   const distance = cameraFocusDistance(pose);
   const height = Math.max(1, viewport.height);
   return (Math.max(0.08, distance) * DOLLY_DISTANCE_FRACTION_PER_VIEW_HEIGHT) / height;

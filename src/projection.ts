@@ -27,24 +27,7 @@ export function orthographicLH(width: number, height: number, near: number, far:
   const safeWidth = Math.max(0.000001, width);
   const safeHeight = Math.max(0.000001, height);
   const range = 1 / Math.max(0.000001, far - near);
-  return new Float32Array([
-    2 / safeWidth,
-    0,
-    0,
-    0,
-    0,
-    2 / safeHeight,
-    0,
-    0,
-    0,
-    0,
-    range,
-    0,
-    0,
-    0,
-    -near * range,
-    1,
-  ]);
+  return new Float32Array([2 / safeWidth, 0, 0, 0, 0, 2 / safeHeight, 0, 0, 0, 0, range, 0, 0, 0, -near * range, 1]);
 }
 
 export function lookAtLH(eye: Vec3, target: Vec3, up: Vec3): Mat4 {

@@ -21,7 +21,9 @@ describe("projection camera quaternion controls", () => {
 
     expect(vectorLength(subtract(next.position, [0, 0, 0]))).toBeCloseTo(4, 5);
     expect(Math.hypot(...next.orientation)).toBeCloseTo(1, 6);
-    expect(angularDistance(cameraBasisFromRigPose(next).forward, normalize(scale(next.position, -1)))).toBeLessThan(0.00001);
+    expect(angularDistance(cameraBasisFromRigPose(next).forward, normalize(scale(next.position, -1)))).toBeLessThan(
+      0.00001,
+    );
   });
 
   test("uses the same orbit behavior for CAVE Room inspection", () => {
@@ -35,7 +37,9 @@ describe("projection camera quaternion controls", () => {
     });
 
     expect(vectorLength(subtract(next.position, [0, 0, 0]))).toBeCloseTo(vectorLength(camera.position), 5);
-    expect(angularDistance(cameraBasisFromRigPose(next).forward, normalize(scale(next.position, -1)))).toBeLessThan(0.00001);
+    expect(angularDistance(cameraBasisFromRigPose(next).forward, normalize(scale(next.position, -1)))).toBeLessThan(
+      0.00001,
+    );
   });
 
   test("rotates Dome POV in place without changing position", () => {
@@ -53,7 +57,9 @@ describe("projection camera quaternion controls", () => {
     });
 
     expect(next.position).toEqual(camera.position);
-    expect(angularDistance(cameraBasisFromRigPose(next).forward, cameraBasisFromRigPose(camera).forward)).toBeGreaterThan(0.05);
+    expect(
+      angularDistance(cameraBasisFromRigPose(next).forward, cameraBasisFromRigPose(camera).forward),
+    ).toBeGreaterThan(0.05);
   });
 
   test("wheel dollies orbit cameras toward the pivot", () => {
@@ -65,7 +71,9 @@ describe("projection camera quaternion controls", () => {
     });
 
     expect(cameraFocusDistance(next)).toBeLessThan(cameraFocusDistance(camera));
-    expect(angularDistance(cameraBasisFromRigPose(next).forward, normalize(scale(next.position, -1)))).toBeLessThan(0.00001);
+    expect(angularDistance(cameraBasisFromRigPose(next).forward, normalize(scale(next.position, -1)))).toBeLessThan(
+      0.00001,
+    );
   });
 });
 

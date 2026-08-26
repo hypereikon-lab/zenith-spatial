@@ -35,7 +35,9 @@ export type ProjectionCameraDragUpdate<Mode extends string = CameraRigMode> =
       camera: CameraRigPose<Mode>;
     };
 
-export function projectionCameraPointerModifiers(input: ProjectionCameraPointerModifierInput): ProjectionCameraDragModifiers {
+export function projectionCameraPointerModifiers(
+  input: ProjectionCameraPointerModifierInput,
+): ProjectionCameraDragModifiers {
   return {
     button: input.button,
     shiftKey: Boolean(input.shiftKey),

@@ -51,29 +51,35 @@ describe("source guide drag controller", () => {
   });
 
   test("converts key commands into breakpoint radius updates", () => {
-    expect(sourceGuideBreakpointRadiusFromKey({
-      breakpoints,
-      id: "inner-split",
-      key: "ArrowRight",
-    })).toEqual({
+    expect(
+      sourceGuideBreakpointRadiusFromKey({
+        breakpoints,
+        id: "inner-split",
+        key: "ArrowRight",
+      }),
+    ).toEqual({
       action: "set",
       id: "inner-split",
       radius: 0.31,
     });
-    expect(sourceGuideBreakpointRadiusFromKey({
-      breakpoints,
-      id: "carrier-horizon",
-      key: "ArrowDown",
-      shiftKey: true,
-    })).toEqual({
+    expect(
+      sourceGuideBreakpointRadiusFromKey({
+        breakpoints,
+        id: "carrier-horizon",
+        key: "ArrowDown",
+        shiftKey: true,
+      }),
+    ).toEqual({
       action: "set",
       id: "carrier-horizon",
       radius: 0.6699999999999999,
     });
-    expect(sourceGuideBreakpointRadiusFromKey({
-      breakpoints,
-      id: "inner-split",
-      key: "Escape",
-    })).toEqual({ action: "none" });
+    expect(
+      sourceGuideBreakpointRadiusFromKey({
+        breakpoints,
+        id: "inner-split",
+        key: "Escape",
+      }),
+    ).toEqual({ action: "none" });
   });
 });

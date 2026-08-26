@@ -1,77 +1,89 @@
 # Zenith
 
-Zenith is a local spatial-image workbench for immersive projection. Its product loop is intentionally narrow:
+Zenith is a local spatial-image authoring instrument for fulldome and other immersive carriers. The product loop is deliberately narrow:
 
-1. **Compose** source images into a projection-aware Plate Sketch.
-2. **Inpaint** that committed Plate Sketch into one continuous carrier image.
-3. **Project** the exact returned pixels into a dome, CAVE, cylinder, or measured hall for review.
+1. **Compose** ordered source images with projection-aware placement, warp, guides, and carrier preview.
+2. **Commit Plate** to render the exact immutable Plate Sketch raster.
+3. **Generate** from that exact commit, with explicit paid confirmation when Runway is configured, or import an Image Take locally.
+4. **Review** a Plate Commit or Image Take as exact pixels or through its pinned spatial geometry.
 
-The default composition and source plates are ready on launch. A project may contain multiple independent Compositions, but Zenith is not currently a timeline, motion generator, NLE, or delivery system.
+Zenith supports multiple independent Compositions, but it is not a timeline, NLE, generic workflow engine, dashboard, or deployment platform.
 
-## Product model
+## Architecture
 
-A Composition owns an ordered source set, an editable placement/warp document, an immutable committed Plate Sketch revision, finished-image revisions, and the spatial metadata belonging to those images.
+- **Effect 3** owns services, Layers, the single browser `ManagedRuntime`, typed errors, observable `SubscriptionRef` state, scoped media handles, job Streams/fibers, cancellation, configuration, clocks, and IDs.
+- **React 19 + Vite** render the workstation. React subscribes through `useSyncExternalStore`, dispatches Effect programs, owns canvas/pointer wiring, and keeps only interaction-local UI state.
+- **Effect Schema** defines the portable project, composition, media, commit, take, generation, carrier, and API boundaries.
+- **Effect Platform Node** serves the production client and the generation API. Secrets, paid validation, confirmation grants, provider calls, durable job state, cancellation, and outputs remain server-side.
+- **Pure TypeScript + TypeGPU/WGSL** retain geometry, projection transforms, plate composition, guide kernels, shader parity, and deterministic reducers without Effect wrappers.
 
-Changing a Composition after commit makes its generated image stale. Image generation is allowed only from an exact committed Plate Sketch at the exact carrier dimensions. Returned PNGs retain Zenith provenance, remain downloadable at native resolution, and are projected without hidden seam correction or raster rewriting.
+The main source boundaries are:
 
-## Projection carriers
+| Area                          | Responsibility                                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `src/domain`                  | Portable `Project`, `Composition`, `MediaAsset`, `PlateCommit`, `ImageTake`, `Workspace`, and job schemas/transitions/selectors |
+| `src/runtime`                 | Browser Layers, state bridge, media ownership, generation commands, and project persistence                                     |
+| `src/react`                   | DCC-style shell and Compose, Generate, and Review rooms                                                                         |
+| `src/geometry`, `src/kernels` | Pure carrier math and CPU/WGSL parity                                                                                           |
+| `src/plates`, `src/graphics`  | Plate placement/composition and scoped WebGPU previews                                                                          |
+| `src/media`                   | Image normalization, PNG provenance, downloads, and archive container                                                           |
+| `src/inpaint`                 | Projection-aware generation prompt compiler; inpaint is a strategy, not an application room                                     |
+| `server`                      | Effect Platform Node API, paid confirmation, jobs, provider boundary, persistence, and static serving                           |
 
-Zenith supports:
+See [projection carriers](docs/projection-carriers.md) for the carrier and rendering contracts.
 
-- Zenith 180° and 230° fisheye;
-- Nadir 180° fisheye;
-- CAVE perimeter/floor carrier;
-- cylinder with nadir or zenith cap;
-- 21:9 cylinder wall unwrap;
-- measured planar-profile hall with an arbitrary roof anchor profile.
+## Domain and persistence
 
-Carrier topology, raster allocation, venue geometry, observer pose, texture horizon, field anchors, CPU math, WGSL execution, prompt language, and persisted metadata are separate concepts. See [projection carriers](docs/projection-carriers.md).
+A Composition owns ordered source assets, one editable Plate Draft, immutable Plate Commits, Image Takes, and its current selections. Readiness, dirty, and stale states are derived from commit fingerprints and parent relationships; they are not persisted flags. Portable assets store descriptors and stable storage references only—never `Blob`, `File`, canvas, or object URLs.
 
-## Image generation
+Project files are binary `.zenith` archives containing the schema-validated document plus exact media sidecars. Loading replaces runtime media atomically and restores the workspace. The loader also includes a one-way importer for the former schema-version 17 JSON/archive format; new saves always use the current domain.
 
-The paid action sends the committed Plate Sketch as the sole spatial/layout authority, the original Plate sources as separately tagged appearance references, the projection-aware compiled prompt, artist direction, and pinned spatial/revision provenance. The original sources may govern content identity, material, and visual medium, but never override authored placement or carrier topology. The browser receives a short-lived server confirmation grant before creating the job. Secrets and upstream calls remain server-only. Automated tests never press paid confirmation.
+Generated PNG outputs retain the pinned spatial contract in an uncompressed `zenith.spatial.v1` `iTXt` chunk without re-encoding image pixels.
 
-The default **Integrated** strategy preserves content identity and placement while allowing local repainting through plate boundaries. **Strict pixels** remains available for archival copy-through.
+## Local development
 
-## Development
+Requires Node.js 22 or newer and a browser with WebGPU.
 
-    npm install
-    npm run dev
+```sh
+npm ci
+npm run dev
+```
+
+Development starts the Effect server at `http://127.0.0.1:4173` and Vite at `http://127.0.0.1:5173`. Vite proxies `/api` to the Effect server.
+
+Production-style local serving:
+
+```sh
+npm run build
+npm start
+```
+
+`npm start` serves `dist/client` and the API together at `http://127.0.0.1:4173`.
 
 Checks:
 
-    npm run lint
-    npm run typecheck
-    npm test
-    npm run build
+```sh
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
 
-The app uses SvelteKit, TypeScript, Zod, Vitest, TypeGPU/WebGPU, and adapter-node. Tests live beside the code they protect; there is no CI/CD or browser-test harness.
+## Server configuration
 
-## Repository boundaries
+Copy `.env.example` to `.env.local` for local configuration. The server scripts load it directly; Vite never receives the Runway secret. Do not commit either file with real credentials.
 
-| Area                                    | Responsibility                                             |
-| --------------------------------------- | ---------------------------------------------------------- |
-| src/ui                                  | Compose, Inpaint, Project, and artist-facing controls      |
-| src/artifacts                           | Reactive workbench state and runtime media handles         |
-| src/sequence                            | Composition library and immutable image revisions          |
-| src/plates                              | Placement, warping, guides, compositing, and commit        |
-| src/geometry, src/kernels, src/graphics | Projection math and CPU/GPU rendering                      |
-| src/inpaint                             | Projection-aware image prompt compiler                     |
-| src/app                                 | Browser commands, persistence, preflight, and confirmation |
-| src/lib/shared                          | JSON-safe portable contracts                               |
-| src/lib/server, src/routes/api          | Server-only image jobs and model integration               |
-| src/media                               | Image metadata, normalization, and downloads               |
+- `RUNWAYML_API_SECRET`: enables paid generation. Without it, Generate stays visibly disabled while local imports remain available.
+- `RUNWAY_API_BASE`, `RUNWAY_API_VERSION`: optional provider overrides.
+- `RUNWAY_POLL_INTERVAL_MS`, `RUNWAY_POLL_TIMEOUT_MS`: optional polling controls.
+- `ZENITH_HOST`, `ZENITH_PORT`: local bind address (defaults `127.0.0.1:4173`).
+- `ZENITH_RUNTIME_DIR`: durable job journal and output directory (defaults `.zenith-runtime`).
+- `ZENITH_CLIENT_DIR`: built client directory (defaults `dist/client`).
 
-## Environment
-
-Create .env.local locally; never commit it.
-
-- RUNWAYML_API_SECRET: required for paid image generation.
-- RUNWAY_API_BASE, RUNWAY_API_VERSION: optional upstream overrides.
-- ZENITH_JOB_STORE_DIR, ZENITH_JOB_RETENTION_DAYS, ZENITH_JOB_MAX_RECORDS: optional job persistence controls.
+Every paid action requires a short-lived, one-use confirmation grant bound to the project and an input digest. The server validates the request and exact raster before invoking the provider. Tests use test Layers and never perform paid calls.
 
 ## Current limits
 
-- Projection review requires WebGPU.
+- Spatial projection review requires WebGPU; exact-pixel review remains available independently.
 - Venue geometry is not yet a projector-by-projector calibration/export system.
-- The composition library is unordered by time. Motion and editing can return as separate, evidence-backed products that consume finished spatial images.
+- Runway is the only paid provider implementation, behind a replaceable Effect service boundary.

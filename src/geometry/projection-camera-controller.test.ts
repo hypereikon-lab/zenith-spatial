@@ -17,7 +17,9 @@ describe("projection camera controller", () => {
 
   test("maps client points into viewport coordinates with optional clamping", () => {
     expect(projectionCameraViewportPoint({ clientX: 110, clientY: 70 }, rect, viewport)).toEqual({ x: 500, y: 250 });
-    expect(projectionCameraViewportPoint({ clientX: -20, clientY: 200 }, rect, viewport, { clampToViewport: true })).toEqual({
+    expect(
+      projectionCameraViewportPoint({ clientX: -20, clientY: 200 }, rect, viewport, { clampToViewport: true }),
+    ).toEqual({
       x: 0,
       y: 500,
     });
@@ -109,14 +111,16 @@ describe("projection camera controller", () => {
       viewport,
       camera: orbitCamera([0, 0, -4], [0, 0, 0]),
     });
-    expect(updateProjectionCameraDrag({
-      drag,
-      pointerId: 5,
-      clientPoint: { clientX: 90, clientY: 30 },
-      rect,
-      viewport,
-      viewMode: "dome-orbit",
-    }).kind).toBe("ignored");
+    expect(
+      updateProjectionCameraDrag({
+        drag,
+        pointerId: 5,
+        clientPoint: { clientX: 90, clientY: 30 },
+        rect,
+        viewport,
+        viewMode: "dome-orbit",
+      }).kind,
+    ).toBe("ignored");
   });
 });
 

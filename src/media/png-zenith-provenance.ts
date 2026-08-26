@@ -1,8 +1,6 @@
-import {
-  ImageGenerationProvenanceV1Schema,
-  type CompositionRevisionMedia,
-  type ImageGenerationProvenanceV1,
-} from "../lib/shared/contracts/composition-sequence.js";
+import * as Schema from "effect/Schema";
+
+import { ImageGenerationProvenanceSchema, type ImageGenerationProvenance } from "../domain/schema.js";
 
 export const ZENITH_PNG_PROVENANCE_KEYWORD = "zenith.spatial.v1";
 
@@ -19,8 +17,10 @@ type PngChunk = {
   crc: number;
 };
 
-export function embedZenithPngProvenance(bytes: Uint8Array, provenance: ImageGenerationProvenanceV1): Uint8Array {
-  const parsed = ImageGenerationProvenanceV1Schema.parse(provenance);
+export function embedZenithPngProvenance(bytes: Uint8Array, provenance: ImageGenerationProvenance): Uint8Array {
+  const parsed = Schema.decodeUnknownSync(ImageGenerationProvenanceSchema)(provenance, {
+    onExcessProperty: "error",
+  });
   const chunks = parsePngChunks(bytes);
   const metadataChunk = createChunk("iTXt", encodeInternationalText(JSON.stringify(parsed)));
   const output: Uint8Array[] = [PNG_SIGNATURE];
@@ -44,7 +44,7 @@ export function embedZenithPngProvenance(bytes: Uint8Array, provenance: ImageGen
   return concatenateBytes(output);
 }
 
-export function readZenithPngProvenance(bytes: Uint8Array): ImageGenerationProvenanceV1 | null {
+export function readZenithPngProvenance(bytes: Uint8Array): ImageGenerationProvenance | null {
   for (const chunk of parsePngChunks(bytes)) {
     if (chunk.type !== "iTXt") continue;
     const data = bytes.subarray(chunk.dataStart, chunk.dataEnd);
@@ -53,33 +53,21 @@ export function readZenithPngProvenance(bytes: Uint8Array): ImageGenerationProve
     if (crc32(concatenateBytes([typeBytes, data])) !== chunk.crc) {
       throw new Error("Zenith PNG provenance has an invalid checksum.");
     }
-    return ImageGenerationProvenanceV1Schema.parse(JSON.parse(decodeInternationalText(data)) as unknown);
+    return Schema.decodeUnknownSync(ImageGenerationProvenanceSchema)(
+      JSON.parse(decodeInternationalText(data)) as unknown,
+      { onExcessProperty: "error" },
+    );
   }
   return null;
 }
 
-export function embedZenithProvenanceInRevisionMedia(
-  media: CompositionRevisionMedia,
-  provenance: ImageGenerationProvenanceV1,
-): CompositionRevisionMedia {
-  if (media.kind !== "image" || !isPngMedia(media)) return media;
-  if (!media.url.startsWith("data:")) return media;
-  const { bytes } = decodeBase64DataUrl(media.url);
-  const embedded = embedZenithPngProvenance(bytes, provenance);
-  return {
-    ...media,
-    url: `data:image/png;base64,${encodeBase64(embedded)}`,
-    mime: "image/png",
-  };
-}
-
-export function readZenithProvenanceFromPngDataUrl(dataUrl: string): ImageGenerationProvenanceV1 | null {
+export function readZenithProvenanceFromPngDataUrl(dataUrl: string): ImageGenerationProvenance | null {
   const { mime, bytes } = decodeBase64DataUrl(dataUrl);
   if (mime !== "image/png") return null;
   return readZenithPngProvenance(bytes);
 }
 
-export async function readZenithProvenanceFromPngBlob(blob: Blob): Promise<ImageGenerationProvenanceV1 | null> {
+export async function readZenithProvenanceFromPngBlob(blob: Blob): Promise<ImageGenerationProvenance | null> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   if (!hasPngSignature(bytes)) return null;
   return readZenithPngProvenance(bytes);
@@ -152,10 +140,6 @@ function internationalTextKeyword(data: Uint8Array): string | null {
   return end < 0 ? null : ascii(data.subarray(0, end));
 }
 
-function isPngMedia(media: CompositionRevisionMedia): boolean {
-  return media.mime === "image/png" || media.url.startsWith("data:image/png;");
-}
-
 function decodeBase64DataUrl(dataUrl: string): { mime: string; bytes: Uint8Array } {
   const match = /^data:([^;,]+);base64,([\s\S]+)$/i.exec(dataUrl);
   if (!match) throw new Error("Expected a base64 data URL.");
@@ -163,18 +147,6 @@ function decodeBase64DataUrl(dataUrl: string): { mime: string; bytes: Uint8Array
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
   return { mime: match[1].toLowerCase(), bytes };
-}
-
-function encodeBase64(bytes: Uint8Array): string {
-  const parts: string[] = [];
-  const chunkSize = 32_768;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, Math.min(bytes.length, offset + chunkSize));
-    let binary = "";
-    for (const byte of chunk) binary += String.fromCharCode(byte);
-    parts.push(binary);
-  }
-  return btoa(parts.join(""));
 }
 
 function assertPngSignature(bytes: Uint8Array): void {

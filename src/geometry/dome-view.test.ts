@@ -23,6 +23,7 @@ describe("dome view pointer projection", () => {
   test("round-trips a visible source direction through screen coordinates", () => {
     const screen = sourceDomeDirectionToScreenPoint([0, 0, 1], baseProjection);
     expect(screen).toEqual({ x: 50, y: 50 });
+    if (!screen) throw new Error("Expected the visible source direction to project");
 
     const direction = sourceDomeDirectionFromScreenPoint(screen, baseProjection);
     expectVectorClose(direction, [0, 0, 1]);
@@ -33,6 +34,7 @@ describe("dome view pointer projection", () => {
 
     const screen = sourceDomeDirectionToScreenPoint(source, baseProjection);
     expect(screen).not.toBeNull();
+    if (!screen) throw new Error("Expected the off-center source direction to project");
     const direction = sourceDomeDirectionFromScreenPoint(screen, baseProjection);
 
     expectVectorClose(direction, source);
@@ -67,8 +69,12 @@ describe("dome view pointer projection", () => {
   });
 
   test("clips source directions outside the selected geometric projection", () => {
-    expect(sourceDomeDirectionToScreenPoint([0, 1, 0], { ...baseProjection, sourceProjectionMode: "cave-270" })).toBeNull();
-    expect(sourceDomeDirectionToScreenPoint([0, -1, 0], { ...baseProjection, sourceProjectionMode: "zenith-180" })).toBeNull();
+    expect(
+      sourceDomeDirectionToScreenPoint([0, 1, 0], { ...baseProjection, sourceProjectionMode: "cave-270" }),
+    ).toBeNull();
+    expect(
+      sourceDomeDirectionToScreenPoint([0, -1, 0], { ...baseProjection, sourceProjectionMode: "zenith-180" }),
+    ).toBeNull();
   });
 
   test("clips tilted dome views in source space instead of raw physical latitude", () => {
@@ -103,6 +109,7 @@ describe("dome view pointer projection", () => {
 
     const screen = sourceDomeDirectionToScreenPoint([0, 0, 1], insideProjection);
     expect(screen).toEqual({ x: 50, y: 50 });
+    if (!screen) throw new Error("Expected the inside-camera source direction to project");
     const direction = sourceDomeDirectionFromScreenPoint(screen, insideProjection);
 
     expectVectorClose(direction, [0, 0, 1]);

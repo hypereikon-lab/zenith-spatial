@@ -1,4 +1,5 @@
 import { d } from "typegpu";
+import * as Schema from "effect/Schema";
 import { normalize } from "../projection.js";
 import {
   directionToDoubleGableCarrierUvKernel,
@@ -24,8 +25,11 @@ export type DoubleGableCarrierSample = {
 export function normalizeDoubleGableProjectionSurface(
   surface: DoubleGableProjectionSurface = DEFAULT_DOUBLE_GABLE_PROJECTION_SURFACE,
 ): DoubleGableProjectionSurface {
-  const parsed = DoubleGableProjectionSurfaceSchema.safeParse(surface);
-  return parsed.success ? parsed.data : { ...DEFAULT_DOUBLE_GABLE_PROJECTION_SURFACE };
+  try {
+    return Schema.decodeUnknownSync(DoubleGableProjectionSurfaceSchema)(surface);
+  } catch {
+    return { ...DEFAULT_DOUBLE_GABLE_PROJECTION_SURFACE };
+  }
 }
 
 export function doubleGableRoofHeight(

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as Schema from "effect/Schema";
 
 /**
  * Persisted source-map projection identifiers.
@@ -18,7 +18,7 @@ export const SOURCE_PROJECTION_MODES = [
   "cylinder-wall",
 ] as const;
 
-export const SourceProjectionModeSchema = z.enum(SOURCE_PROJECTION_MODES);
+export const SourceProjectionModeSchema = Schema.Literal(...SOURCE_PROJECTION_MODES);
 
 export type SourceProjectionMode = (typeof SOURCE_PROJECTION_MODES)[number];
 

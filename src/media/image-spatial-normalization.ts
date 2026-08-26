@@ -1,25 +1,13 @@
 import { projectionCarrierProfile } from "../geometry/projection-carrier-profile.js";
-import type {
-  CompositionRevision,
-  CompositionRevisionMedia,
-  ImageSpatialSpec,
-} from "../lib/shared/contracts/composition-sequence.js";
+import type { ImageSpatialSpec } from "../domain/schema.js";
 
-export const IMAGE_SPATIAL_NORMALIZATION_VERSION = 2;
-export const IMAGE_SPATIAL_NORMALIZATION_CONFIG_KEY = "imageSpatialNormalizationVersion";
-
-export function currentImageSpatialNormalizationConfig(
-  config: CompositionRevision["config"] = undefined,
-): NonNullable<CompositionRevision["config"]> {
-  return {
-    ...(config || {}),
-    [IMAGE_SPATIAL_NORMALIZATION_CONFIG_KEY]: IMAGE_SPATIAL_NORMALIZATION_VERSION,
-  };
-}
-
-export function imageSpatialNormalizationIsCurrent(revision: CompositionRevision): boolean {
-  return revision.config?.[IMAGE_SPATIAL_NORMALIZATION_CONFIG_KEY] === IMAGE_SPATIAL_NORMALIZATION_VERSION;
-}
+/** Ephemeral browser input/output for explicit raster normalization; never persisted as project state. */
+export type SpatialImageMedia = {
+  readonly url: string;
+  readonly name?: string;
+  readonly mime?: string;
+  readonly alt?: string;
+};
 
 export type ImageSpatialDrawPlan = {
   sourceWidth: number;
@@ -75,10 +63,10 @@ export function imageSpatialDrawPlan(
 }
 
 export async function normalizeImageRevisionMedia(
-  media: CompositionRevisionMedia,
+  media: SpatialImageMedia,
   spec: ImageSpatialSpec,
-): Promise<{ media: CompositionRevisionMedia; spatialSpec: ImageSpatialSpec }> {
-  if (media.kind !== "image" || typeof document === "undefined" || typeof Image === "undefined") {
+): Promise<{ media: SpatialImageMedia; spatialSpec: ImageSpatialSpec }> {
+  if (typeof document === "undefined" || typeof Image === "undefined") {
     return { media, spatialSpec: spec };
   }
   const image = await loadImage(media.url);
@@ -128,7 +116,6 @@ export async function normalizeImageRevisionMedia(
 
   return {
     media: {
-      kind: "image",
       url: canvas.toDataURL("image/png"),
       name: normalizedName(media.name),
       mime: "image/png",

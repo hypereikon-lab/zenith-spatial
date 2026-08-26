@@ -1,7 +1,6 @@
 import { sourceProjectionLabel } from "../geometry/source-projection.js";
 import { plateEditorViewLabel, type PlateEditorCamera, type PlateEditorViewMode } from "../plates/plate-editor-view.js";
 import { createSourceMapPreviewRenderer, type SourceMapPreviewRenderer } from "./source-map-preview-renderer.js";
-import type { ArtifactMedia } from "../artifacts/artifact-types.js";
 import type { SourceProjectionMode } from "../geometry/source-projection.js";
 import type { ProjectionSurface } from "../lib/shared/contracts/projection-authoring.js";
 import { sourceReviewGuideOverlay, type SourceReviewViewMode } from "../scene/projection-view-contract.js";
@@ -13,7 +12,7 @@ export type SourceMapPreviewSessionUpdate = {
 
 export type SourceMapPreviewSessionRenderInput = {
   mediaUrl: string;
-  mediaKind: ArtifactMedia["kind"];
+  mediaKind: "image";
   projectionProfile: SourceProjectionMode;
   viewerMode: SourceReviewViewMode;
   selectedViewMode: PlateEditorViewMode;
@@ -66,7 +65,7 @@ export function createSourceMapPreviewSession(
     emit: (update: SourceMapPreviewSessionUpdate) => void = () => {},
   ): Promise<SourceMapPreviewSessionUpdate | null> {
     const request = ++serial;
-    if (input.mediaKind !== "image" || !input.mediaUrl) {
+    if (!input.mediaUrl) {
       closeBitmap();
       sourceKey = "";
       const update = { status: "No image loaded." };
@@ -106,8 +105,13 @@ export function createSourceMapPreviewSession(
       });
       const imageSize = bitmap ? { width: bitmap.width, height: bitmap.height } : undefined;
       const update = {
-        status: input.label + " mapped as " + sourceProjectionLabel(input.projectionProfile) +
-          " / " + plateEditorViewLabel(input.selectedViewMode) + ".",
+        status:
+          input.label +
+          " mapped as " +
+          sourceProjectionLabel(input.projectionProfile) +
+          " / " +
+          plateEditorViewLabel(input.selectedViewMode) +
+          ".",
         imageSize,
       };
       emit(update);

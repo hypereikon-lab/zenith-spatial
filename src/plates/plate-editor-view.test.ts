@@ -61,7 +61,7 @@ describe("plate editor projection views", () => {
     expect(camera.fovDegrees).toBe(170);
   });
 
-  test("builds projection descriptors from Svelte-owned camera state", () => {
+  test("builds projection descriptors from workbench camera state", () => {
     const rect = { x: 0, y: 0, width: 768, height: 768 };
     const camera = defaultPlateEditorCamera("cave-270");
     const dome = plateEditorDomeProjection("dome-orbit", camera, "cave-270", rect);

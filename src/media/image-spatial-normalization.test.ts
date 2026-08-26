@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { defaultImageSpatialSpec } from "../lib/shared/contracts/composition-sequence.js";
+import { createInitialZenithDocument, defaultImageSpatialSpec, selectedComposition } from "../domain/project.js";
 import { imageSpatialDrawPlan, normalizeImageRevisionMedia } from "./image-spatial-normalization.js";
+
+function spatialSpec(projectionMode?: Parameters<typeof defaultImageSpatialSpec>[0]["projectionMode"]) {
+  const draft = structuredClone(selectedComposition(createInitialZenithDocument()).plateDraft);
+  if (projectionMode) {
+    draft.projectionMode = projectionMode;
+    // These tests exercise raster normalization and do not consume the physical surface.
+  }
+  return defaultImageSpatialSpec(draft);
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -8,7 +17,7 @@ afterEach(() => {
 
 describe("image spatial normalization", () => {
   test("contains a wide source inside the canonical square", () => {
-    const plan = imageSpatialDrawPlan(1920, 1080, defaultImageSpatialSpec());
+    const plan = imageSpatialDrawPlan(1920, 1080, spatialSpec());
     expect(plan).toMatchObject({ targetWidth: 1920, targetHeight: 1920, drawWidth: 1920, centerX: 960 });
     expect(plan.drawHeight).toBeCloseTo(1080, 5);
     expect(plan.clipRadius).toBeCloseTo(921.6, 5);
@@ -18,7 +27,7 @@ describe("image spatial normalization", () => {
 
   test("keeps an angular fisheye circular on a non-square carrier", () => {
     const plan = imageSpatialDrawPlan(2560, 1440, {
-      ...defaultImageSpatialSpec(),
+      ...spatialSpec(),
       targetWidth: 2560,
       targetHeight: 1440,
     });
@@ -32,7 +41,7 @@ describe("image spatial normalization", () => {
     "uses the full normalized UV ellipse for a non-square %s carrier",
     (projectionMode) => {
       const plan = imageSpatialDrawPlan(2560, 1440, {
-        ...defaultImageSpatialSpec({ projectionMode }),
+        ...spatialSpec(projectionMode),
         targetWidth: 2560,
         targetHeight: 1440,
       });
@@ -48,31 +57,31 @@ describe("image spatial normalization", () => {
 
   test("conforms raster aspect by topology without falsifying angular geometry", () => {
     const angular = imageSpatialDrawPlan(1920, 1920, {
-      ...defaultImageSpatialSpec({ projectionMode: "zenith-180" }),
+      ...spatialSpec("zenith-180"),
       fit: "projection-aware",
       targetWidth: 2560,
       targetHeight: 1440,
     });
     const cylinder = imageSpatialDrawPlan(1920, 1920, {
-      ...defaultImageSpatialSpec({ projectionMode: "cylinder-nadir" }),
+      ...spatialSpec("cylinder-nadir"),
       fit: "projection-aware",
       targetWidth: 2560,
       targetHeight: 1440,
     });
     const cave = imageSpatialDrawPlan(1920, 1920, {
-      ...defaultImageSpatialSpec({ projectionMode: "cave-270" }),
+      ...spatialSpec("cave-270"),
       fit: "projection-aware",
       targetWidth: 2560,
       targetHeight: 1440,
     });
     const cylinderWall = imageSpatialDrawPlan(1920, 1920, {
-      ...defaultImageSpatialSpec({ projectionMode: "cylinder-wall" }),
+      ...spatialSpec("cylinder-wall"),
       fit: "projection-aware",
       targetWidth: 2560,
       targetHeight: 1440,
     });
     const doubleGable = imageSpatialDrawPlan(2912, 1248, {
-      ...defaultImageSpatialSpec({ projectionMode: "hall-double-gable" }),
+      ...spatialSpec("hall-double-gable"),
       fit: "projection-aware",
       targetWidth: 2912,
       targetHeight: 1248,
@@ -121,9 +130,9 @@ describe("image spatial normalization", () => {
     vi.stubGlobal("Image", FakeImage);
 
     await normalizeImageRevisionMedia(
-      { kind: "image", url: "data:image/png;base64,source" },
+      { url: "data:image/png;base64,source" },
       {
-        ...defaultImageSpatialSpec({ projectionMode: "cylinder-nadir" }),
+        ...spatialSpec("cylinder-nadir"),
         targetWidth: 2560,
         targetHeight: 1440,
       },
@@ -136,7 +145,7 @@ describe("image spatial normalization", () => {
 
   test("covers and offsets a portrait source without changing canonical dimensions", () => {
     const plan = imageSpatialDrawPlan(1080, 1920, {
-      ...defaultImageSpatialSpec(),
+      ...spatialSpec(),
       fit: "cover",
       offsetX: 0.25,
       offsetY: -0.5,
@@ -150,10 +159,10 @@ describe("image spatial normalization", () => {
   });
 
   test("keeps CAVE carriers rectangular and falls back safely outside a browser", async () => {
-    const spec = { ...defaultImageSpatialSpec({ projectionMode: "cave-270" }), exterior: "preserve" as const };
+    const spec = { ...spatialSpec("cave-270"), exterior: "preserve" as const };
     expect(imageSpatialDrawPlan(2048, 2048, spec).clipRadius).toBeNull();
     expect(imageSpatialDrawPlan(2048, 2048, spec).clip).toBeNull();
-    const media = { kind: "image" as const, url: "data:image/png;base64,AAAA" };
+    const media = { url: "data:image/png;base64,AAAA" };
     await expect(normalizeImageRevisionMedia(media, spec)).resolves.toEqual({ media, spatialSpec: spec });
   });
 
@@ -193,9 +202,9 @@ describe("image spatial normalization", () => {
     vi.stubGlobal("Image", FakeImage);
 
     await normalizeImageRevisionMedia(
-      { kind: "image", url: "data:image/png;base64,source" },
+      { url: "data:image/png;base64,source" },
       {
-        ...defaultImageSpatialSpec({ projectionMode: "hall-double-gable" }),
+        ...spatialSpec("hall-double-gable"),
         targetWidth: 2912,
         targetHeight: 1248,
       },

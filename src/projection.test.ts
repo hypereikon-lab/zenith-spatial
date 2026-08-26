@@ -19,7 +19,10 @@ const profile: ProjectionProfile = {
   radiusPixels: 1024,
 };
 
-function expectCloseVector(actual: Vec3 | number[], expected: Vec3 | number[], precision = 8): void {
+function expectCloseVector(actual: Vec3 | number[] | null, expected: Vec3 | number[] | null, precision = 8): void {
+  expect(actual).not.toBeNull();
+  expect(expected).not.toBeNull();
+  if (!actual || !expected) throw new Error("Expected non-null projection vectors");
   expect(actual).toHaveLength(expected.length);
   actual.forEach((value: number, index: number) => {
     expect(value).toBeCloseTo(expected[index], precision);
@@ -29,6 +32,7 @@ function expectCloseVector(actual: Vec3 | number[], expected: Vec3 | number[], p
 describe("fulldome projection math", () => {
   test("maps center UV to zenith direction and back", () => {
     const direction = mapUvToDomeDirection(0.5, 0.5, profile);
+    if (!direction) throw new Error("Expected center UV inside the domemaster");
 
     expectCloseVector(direction, [0, 1, 0]);
     expect(domeDirectionToMotionUv(direction, profile)).toEqual({ u: 0.5, v: 0.5 });
@@ -77,6 +81,7 @@ describe("fulldome projection math", () => {
   test("slerp preserves angular midpoint on the dome", () => {
     const north = mapUvToDomeDirection(0.5, 0, profile);
     const east = mapUvToDomeDirection(1, 0.5, profile);
+    if (!north || !east) throw new Error("Expected cardinal UV coordinates inside the domemaster");
     const middle = slerpDirections(north, east, 0.5);
 
     expect(angularDistance(north, middle)).toBeCloseTo(angularDistance(middle, east), 8);

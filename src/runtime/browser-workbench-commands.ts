@@ -1,0 +1,424 @@
+import { Clock, Data, Effect } from "effect";
+
+import {
+  addImageTake,
+  addPlateCommit,
+  addSourceAssets,
+  defaultImageSpatialSpec,
+  plateDraftFingerprint,
+  removeSourceAsset,
+  replaceSelectedCompositionDraft,
+  setProjection,
+  selectedComposition,
+} from "../domain/project.js";
+import type { ImageTake, MediaAsset, PlateCommit, PlateDraft } from "../domain/schema.js";
+import { canvasToBlob } from "../media/canvas-utils.js";
+import { readZenithProvenanceFromPngBlob } from "../media/png-zenith-provenance.js";
+import { defaultPlateSketchPlacement } from "../plates/plate-sketch-arrangement.js";
+import type { PlateSketchPreviewInput, PlateSketchPreviewSession } from "../plates/plate-sketch-preview-session.js";
+import { loadPlateSketchSource, type PlateSketchImage } from "../plates/plate-sketch-sources.js";
+import { normalizePlatePlacement } from "../plates/plate-placement.js";
+import type { DomeScenePlateLayer } from "../lib/shared/contracts/dome-scene.js";
+import { carrierRasterForProjection } from "../lib/shared/contracts/projection-authoring.js";
+import type { SourceProjectionMode } from "../geometry/source-projection.js";
+import { IdGenerator } from "./id-service.js";
+import { MediaRepository } from "./media-repository.js";
+import { WorkbenchService } from "./workbench-service.js";
+
+export class BrowserWorkbenchError extends Data.TaggedError("BrowserWorkbenchError")<{
+  readonly operation: "load" | "import" | "commit" | "take" | "state";
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
+
+export type LoadedCompositionPlate = PlateSketchImage & {
+  readonly assetId: string;
+  readonly layerId: string;
+};
+
+export const loadSelectedCompositionPlates = Effect.gen(function* () {
+  const workbench = yield* WorkbenchService;
+  const document = workbench.getSnapshot().document;
+  const composition = selectedComposition(document);
+  const repository = yield* MediaRepository;
+
+  return yield* Effect.forEach(
+    composition.plateDraft.frame.plateLayers.filter((layer) => layer.visible),
+    (layer) =>
+      Effect.gen(function* () {
+        const assetId = layer.source.assetId;
+        const asset = assetId ? document.project.assets[assetId] : undefined;
+        if (!assetId || !asset) {
+          return yield* Effect.fail(
+            new BrowserWorkbenchError({
+              operation: "load",
+              message: `${layer.name} references media that is not in this project.`,
+            }),
+          );
+        }
+        const existing = yield* repository.get(asset.id);
+        let plate: PlateSketchImage;
+        if (existing?.canvas && existing.canvas.width > 0 && existing.canvas.height > 0) {
+          plate = {
+            name: layer.source.name,
+            width: existing.canvas.width,
+            height: existing.canvas.height,
+            aspect: existing.canvas.width / existing.canvas.height,
+            canvas: existing.canvas,
+          };
+        } else {
+          const blob = yield* repository.readBlob(asset);
+          plate = yield* Effect.tryPromise({
+            try: () => loadPlateSketchSource(layer.source.name, blob),
+            catch: (cause) =>
+              new BrowserWorkbenchError({
+                operation: "load",
+                message: `Could not decode ${asset.filename}.`,
+                cause,
+              }),
+          });
+          yield* repository.put(asset.id, { blob, canvas: plate.canvas });
+        }
+        return {
+          ...plate,
+          assetId,
+          layerId: layer.id,
+          sourceUrl: asset.storageRef,
+          mime: asset.mime,
+        } satisfies LoadedCompositionPlate;
+      }),
+    { concurrency: 4 },
+  );
+});
+
+export function importPlateSources(files: ReadonlyArray<File>) {
+  return Effect.gen(function* () {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({ operation: "import", message: "Choose one or more image files." }),
+      );
+    }
+    const workbench = yield* WorkbenchService;
+    const repository = yield* MediaRepository;
+    const ids = yield* IdGenerator;
+    const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+    const current = selectedComposition(workbench.getSnapshot().document);
+    const startIndex = current.plateDraft.frame.plateLayers.length;
+    const total = startIndex + imageFiles.length;
+    const imported = yield* Effect.forEach(
+      imageFiles,
+      (file, offset) =>
+        Effect.gen(function* () {
+          const assetId = yield* ids.next("media");
+          const layerId = yield* ids.next("layer");
+          const plate = yield* Effect.tryPromise({
+            try: () => loadPlateSketchSource(file.name, file),
+            catch: (cause) =>
+              new BrowserWorkbenchError({
+                operation: "import",
+                message: `Could not decode ${file.name}.`,
+                cause,
+              }),
+          });
+          const asset: MediaAsset = {
+            id: assetId,
+            kind: "image",
+            filename: file.name,
+            mime: file.type || "image/png",
+            width: plate.width,
+            height: plate.height,
+            storageRef: `media:${assetId}`,
+            alt: file.name,
+            createdAt: now,
+          };
+          const placement = normalizePlatePlacement(
+            defaultPlateSketchPlacement(startIndex + offset, total, plate),
+            plate,
+          );
+          const layer: DomeScenePlateLayer = {
+            id: layerId,
+            name: file.name,
+            index: startIndex + offset,
+            source: {
+              assetId,
+              name: file.name,
+              width: plate.width,
+              height: plate.height,
+              aspect: plate.aspect,
+              mime: asset.mime,
+            },
+            placement,
+            visible: true,
+            locked: false,
+          };
+          yield* repository.put(assetId, { blob: file, file, canvas: plate.canvas });
+          return { asset, layer };
+        }),
+      { concurrency: 2 },
+    );
+
+    yield* workbench.updateDocument((document) =>
+      addSourceAssets(
+        document,
+        imported.map(({ asset }) => asset),
+        imported.map(({ layer }) => layer),
+        now,
+      ),
+    );
+    return imported.map(({ asset }) => asset);
+  });
+}
+
+export function removePlateSource(assetId: string) {
+  return Effect.gen(function* () {
+    const workbench = yield* WorkbenchService;
+    const repository = yield* MediaRepository;
+    const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+    const document = yield* workbench.updateDocument((current) => removeSourceAsset(current, assetId, now));
+    if (!document.project.assets[assetId]) yield* repository.remove(assetId);
+  });
+}
+
+export function replacePlateDraft(draft: PlateDraft) {
+  return Effect.gen(function* () {
+    const workbench = yield* WorkbenchService;
+    const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+    return yield* workbench.updateDocument((document) => replaceSelectedCompositionDraft(document, draft, now));
+  });
+}
+
+export function changeProjection(projectionMode: SourceProjectionMode) {
+  return Effect.gen(function* () {
+    const workbench = yield* WorkbenchService;
+    const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+    return yield* workbench.updateDocument((document) =>
+      setProjection(
+        document,
+        projectionMode,
+        carrierRasterForProjection(projectionMode, selectedComposition(document).plateDraft.raster),
+        now,
+      ),
+    );
+  });
+}
+
+export function commitPlate(
+  session: Pick<PlateSketchPreviewSession, "renderHandoffCanvas">,
+  previewInput: PlateSketchPreviewInput,
+) {
+  return Effect.gen(function* () {
+    const workbench = yield* WorkbenchService;
+    const repository = yield* MediaRepository;
+    const ids = yield* IdGenerator;
+    const snapshot = workbench.getSnapshot();
+    const composition = selectedComposition(snapshot.document);
+    if (composition.sourceAssetIds.length === 0 || previewInput.plates.length === 0) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({ operation: "commit", message: "Load at least one source before committing." }),
+      );
+    }
+    const { width, height } = composition.plateDraft.raster;
+    const handoff = yield* Effect.tryPromise({
+      try: () => session.renderHandoffCanvas(previewInput, { width, height }),
+      catch: (cause) =>
+        new BrowserWorkbenchError({
+          operation: "commit",
+          message: "The exact Plate Sketch raster could not be rendered.",
+          cause,
+        }),
+    });
+    if (handoff.width !== width || handoff.height !== height) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({
+          operation: "commit",
+          message: `Renderer returned ${handoff.width}×${handoff.height}; expected ${width}×${height}.`,
+        }),
+      );
+    }
+    const blob = yield* Effect.tryPromise({
+      try: () => canvasToBlob(handoff, "image/png"),
+      catch: (cause) =>
+        new BrowserWorkbenchError({ operation: "commit", message: "Plate Sketch PNG encoding failed.", cause }),
+    });
+    const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+    const mediaId = yield* ids.next("media");
+    const commitId = yield* ids.next("plate-commit");
+    const draft = structuredClone(composition.plateDraft);
+    const media: MediaAsset = {
+      id: mediaId,
+      kind: "image",
+      filename: `plate-sketch-${width}x${height}.png`,
+      mime: "image/png",
+      width,
+      height,
+      storageRef: `media:${mediaId}`,
+      alt: "Exact committed Plate Sketch raster",
+      createdAt: now,
+    };
+    const commit: PlateCommit = {
+      id: commitId,
+      label: `Plate Commit ${composition.plateCommits.length + 1}`,
+      createdAt: now,
+      mediaAssetId: mediaId,
+      draft,
+      spatialSpec: {
+        ...defaultImageSpatialSpec(draft),
+        sourceWidth: width,
+        sourceHeight: height,
+        sourceAspectRatio: width / height,
+      },
+      provenance: {
+        version: 1,
+        projectId: snapshot.document.project.id,
+        compositionId: composition.id,
+        sourceAssetIds: [...composition.sourceAssetIds],
+        draftFingerprint: plateDraftFingerprint(draft),
+      },
+    };
+    yield* repository.put(mediaId, { blob, canvas: handoff });
+    yield* workbench
+      .updateDocument((document) => addPlateCommit(document, media, commit, now))
+      .pipe(Effect.onError(() => repository.remove(mediaId)));
+    return commit;
+  });
+}
+
+export function importPlateCommit(file: File) {
+  return Effect.gen(function* () {
+    if (!file.type.startsWith("image/")) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({ operation: "commit", message: "The Plate Sketch must be an image." }),
+      );
+    }
+    const workbench = yield* WorkbenchService;
+    const repository = yield* MediaRepository;
+    const ids = yield* IdGenerator;
+    const dimensions = yield* decodeImageDimensions(file, "commit");
+    const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+    const snapshot = workbench.getSnapshot();
+    const composition = selectedComposition(snapshot.document);
+    const raster = composition.plateDraft.raster;
+    if (dimensions.width !== raster.width || dimensions.height !== raster.height) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({
+          operation: "commit",
+          message: `Imported Plate Sketch is ${dimensions.width}×${dimensions.height}; the active carrier requires exactly ${raster.width}×${raster.height} pixels.`,
+        }),
+      );
+    }
+    const mediaId = yield* ids.next("media");
+    const commitId = yield* ids.next("plate-commit");
+    const media: MediaAsset = {
+      id: mediaId,
+      kind: "image",
+      filename: file.name,
+      mime: file.type || "image/png",
+      width: dimensions.width,
+      height: dimensions.height,
+      storageRef: `media:${mediaId}`,
+      alt: "Imported Plate Sketch",
+      createdAt: now,
+    };
+    const commit: PlateCommit = {
+      id: commitId,
+      label: `Imported Plate Commit ${composition.plateCommits.length + 1}`,
+      createdAt: now,
+      mediaAssetId: mediaId,
+      draft: structuredClone(composition.plateDraft),
+      spatialSpec: {
+        ...defaultImageSpatialSpec(composition.plateDraft),
+        sourceWidth: dimensions.width,
+        sourceHeight: dimensions.height,
+        sourceAspectRatio: dimensions.width / dimensions.height,
+      },
+      provenance: {
+        version: 1,
+        projectId: snapshot.document.project.id,
+        compositionId: composition.id,
+        sourceAssetIds: [...composition.sourceAssetIds],
+        draftFingerprint: plateDraftFingerprint(composition.plateDraft),
+      },
+    };
+    yield* repository.put(mediaId, { blob: file, file });
+    yield* workbench
+      .updateDocument((document) => addPlateCommit(document, media, commit, now))
+      .pipe(Effect.onError(() => repository.remove(mediaId)));
+    return commit;
+  });
+}
+
+export function importImageTake(file: File) {
+  return Effect.gen(function* () {
+    if (!file.type.startsWith("image/")) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({ operation: "take", message: "The Image Take must be an image." }),
+      );
+    }
+    const workbench = yield* WorkbenchService;
+    const repository = yield* MediaRepository;
+    const ids = yield* IdGenerator;
+    const dimensions = yield* decodeImageDimensions(file, "take");
+    const embeddedProvenance = yield* Effect.tryPromise({
+      try: () => readZenithProvenanceFromPngBlob(file),
+      catch: (cause) => cause,
+    }).pipe(Effect.catchAll(() => Effect.succeed(null)));
+    const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+    const composition = selectedComposition(workbench.getSnapshot().document);
+    const provenance =
+      embeddedProvenance &&
+      embeddedProvenance.projectId === workbench.getSnapshot().document.project.id &&
+      embeddedProvenance.compositionId === composition.id &&
+      composition.plateCommits.some((commit) => commit.id === embeddedProvenance.plateCommitId)
+        ? embeddedProvenance
+        : undefined;
+    const mediaId = yield* ids.next("media");
+    const takeId = yield* ids.next("image-take");
+    const media: MediaAsset = {
+      id: mediaId,
+      kind: "image",
+      filename: file.name,
+      mime: file.type || "image/png",
+      width: dimensions.width,
+      height: dimensions.height,
+      storageRef: `media:${mediaId}`,
+      alt: "Imported Image Take",
+      createdAt: now,
+    };
+    const take: ImageTake = {
+      id: takeId,
+      label: `Imported Image Take ${composition.imageTakes.length + 1}`,
+      kind: "imported",
+      createdAt: now,
+      mediaAssetId: mediaId,
+      plateCommitId: provenance?.plateCommitId ?? composition.selectedPlateCommitId,
+      direction: composition.generationDirection,
+      strategy: composition.generationStrategy,
+      model: provenance?.model,
+      spatialSpec: {
+        ...(provenance?.spatialSpec ?? defaultImageSpatialSpec(composition.plateDraft)),
+        sourceWidth: dimensions.width,
+        sourceHeight: dimensions.height,
+        sourceAspectRatio: dimensions.width / dimensions.height,
+      },
+      provenance,
+    };
+    yield* repository.put(mediaId, { blob: file, file });
+    yield* workbench
+      .updateDocument((document) => addImageTake(document, media, take, now))
+      .pipe(Effect.onError(() => repository.remove(mediaId)));
+    return take;
+  });
+}
+
+function decodeImageDimensions(file: Blob, operation: "commit" | "take") {
+  return Effect.acquireUseRelease(
+    Effect.tryPromise({
+      try: () => createImageBitmap(file, { imageOrientation: "from-image" }),
+      catch: (cause) =>
+        new BrowserWorkbenchError({ operation, message: "The selected image could not be decoded.", cause }),
+    }),
+    (bitmap) => Effect.succeed({ width: bitmap.width, height: bitmap.height }),
+    (bitmap) => Effect.sync(() => bitmap.close()),
+  );
+}

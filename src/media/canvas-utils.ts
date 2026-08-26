@@ -3,11 +3,20 @@ import { clamp } from "../projection.js";
 type CanvasSource = HTMLCanvasElement | OffscreenCanvas;
 type Rgb = [number, number, number];
 
+function requireCanvas2dContext(
+  canvas: HTMLCanvasElement,
+  options?: CanvasRenderingContext2DSettings,
+): CanvasRenderingContext2D {
+  const context = canvas.getContext("2d", options);
+  if (!context) throw new Error("A 2D canvas context is unavailable.");
+  return context;
+}
+
 export function createBlankCanvas(width: number, height: number, fill: string): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext("2d");
+  const ctx = requireCanvas2dContext(canvas);
   ctx.fillStyle = fill;
   ctx.fillRect(0, 0, width, height);
   return canvas;
@@ -46,7 +55,7 @@ export function makeCanvasThumbnail(sourceCanvas: CanvasImageSource, size: numbe
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
-  const ctx = canvas.getContext("2d", { alpha: false });
+  const ctx = requireCanvas2dContext(canvas, { alpha: false });
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, size, size);
   ctx.drawImage(sourceCanvas, 0, 0, size, size);
@@ -57,7 +66,7 @@ export function imageBitmapToCanvas(bitmap: ImageBitmap): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
   canvas.height = bitmap.height;
-  const ctx = canvas.getContext("2d");
+  const ctx = requireCanvas2dContext(canvas);
   ctx.drawImage(bitmap, 0, 0);
   return canvas;
 }
@@ -66,7 +75,7 @@ export function cloneCanvas(source: CanvasSource): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = source.width;
   canvas.height = source.height;
-  const ctx = canvas.getContext("2d");
+  const ctx = requireCanvas2dContext(canvas);
   ctx.drawImage(source, 0, 0);
   return canvas;
 }
@@ -87,7 +96,7 @@ function loadCanvasFromDataUrl(source: string): Promise<HTMLCanvasElement> {
       const canvas = document.createElement("canvas");
       canvas.width = image.naturalWidth || image.width;
       canvas.height = image.naturalHeight || image.height;
-      canvas.getContext("2d").drawImage(image, 0, 0);
+      requireCanvas2dContext(canvas).drawImage(image, 0, 0);
       resolve(canvas);
     };
     image.onerror = () => reject(new Error("Could not load embedded image."));
@@ -95,11 +104,15 @@ function loadCanvasFromDataUrl(source: string): Promise<HTMLCanvasElement> {
   });
 }
 
-export function keyChromaCanvas(sourceCanvas: CanvasImageSource & { width: number; height: number }, keyColor: Rgb, tolerance: number): HTMLCanvasElement {
+export function keyChromaCanvas(
+  sourceCanvas: CanvasImageSource & { width: number; height: number },
+  keyColor: Rgb,
+  tolerance: number,
+): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = sourceCanvas.width;
   canvas.height = sourceCanvas.height;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const ctx = requireCanvas2dContext(canvas, { willReadFrequently: true });
   ctx.drawImage(sourceCanvas, 0, 0);
   const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const data = image.data;

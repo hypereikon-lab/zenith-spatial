@@ -584,6 +584,8 @@ async function readTextureToCanvas(
   const output = document.createElement("canvas");
   output.width = width;
   output.height = height;
-  output.getContext("2d").putImageData(new ImageData(pixels, width, height), 0, 0);
+  const context = output.getContext("2d");
+  if (!context) throw new Error("Could not create a 2D canvas for the Plate Sketch handoff.");
+  context.putImageData(new ImageData(pixels, width, height), 0, 0);
   return output;
 }

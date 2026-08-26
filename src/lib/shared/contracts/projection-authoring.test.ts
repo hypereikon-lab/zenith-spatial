@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import * as Schema from "effect/Schema";
 import {
   BoxRoomProjectionSurfaceSchema,
   CarrierRasterSchema,
@@ -20,7 +21,7 @@ describe("projection authoring contracts", () => {
   test.each(GENERATION_ASPECT_PRESETS)("provides a valid cross-model %s carrier raster", (aspectPreset) => {
     const raster = carrierRasterForAspect(aspectPreset);
 
-    expect(CarrierRasterSchema.parse(raster)).toEqual(raster);
+    expect(parse(CarrierRasterSchema, raster)).toEqual(raster);
     expect(gptImage2RasterIssues(raster.width, raster.height)).toEqual([]);
     expect(raster.width * raster.height).toBeLessThanOrEqual(2560 * 1440);
   });
@@ -59,7 +60,7 @@ describe("projection authoring contracts", () => {
       eyeZ: -0.4,
     };
 
-    expect(BoxRoomProjectionSurfaceSchema.parse(surface)).toEqual(surface);
+    expect(parse(BoxRoomProjectionSurfaceSchema, surface)).toEqual(surface);
     expect(normalizeProjectionSurfaceForMode(surface, "cave-270")).toEqual({
       ...surface,
       anchors: { horizonHeight: 1.4 },
@@ -74,7 +75,7 @@ describe("projection authoring contracts", () => {
 
   test("rejects observer coordinates outside the measured room", () => {
     expect(() =>
-      BoxRoomProjectionSurfaceSchema.parse({
+      parse(BoxRoomProjectionSurfaceSchema, {
         kind: "box-room",
         width: 6,
         depth: 4,
@@ -100,7 +101,7 @@ describe("projection authoring contracts", () => {
       eyeZ: 0,
     };
 
-    expect(DoubleGableProjectionSurfaceSchema.parse(surface)).toEqual(surface);
+    expect(parse(DoubleGableProjectionSurfaceSchema, surface)).toEqual(surface);
     expect(normalizeProjectionSurfaceForMode(surface, "hall-double-gable")).toEqual({
       ...surface,
       anchors: { horizonHeight: 1.65 },
@@ -117,7 +118,7 @@ describe("projection authoring contracts", () => {
         { id: "right", position: 1, height: 8.9, role: "eave" as const },
       ],
     };
-    expect(DoubleGableProjectionSurfaceSchema.parse(profiled)).toEqual(profiled);
+    expect(parse(DoubleGableProjectionSurfaceSchema, profiled)).toEqual(profiled);
     expect(projectionSurfacePhysicalHorizon(profiled)).toEqual({
       height: 1.65,
       upperLimit: 8.4,
@@ -145,7 +146,7 @@ describe("projection authoring contracts", () => {
       eyeZ: -0.5,
     };
 
-    expect(DoubleGableProjectionSurfaceSchema.parse(profiled)).toEqual(profiled);
+    expect(parse(DoubleGableProjectionSurfaceSchema, profiled)).toEqual(profiled);
     expect(planarRoofProfile(profiled).map((anchor) => anchor.role)).toEqual(["eave", "ridge", "break", "eave"]);
   });
 
@@ -158,12 +159,12 @@ describe("projection authoring contracts", () => {
         { id: "right", position: 0.9, height: 8.4, role: "eave" as const },
       ],
     };
-    expect(() => DoubleGableProjectionSurfaceSchema.parse(surface)).toThrow(/start|ordered|end/);
+    expect(() => parse(DoubleGableProjectionSurfaceSchema, surface)).toThrow(/start|ordered|end/);
   });
 
   test("rejects impossible double-gable roof and observer geometry", () => {
     expect(() =>
-      DoubleGableProjectionSurfaceSchema.parse({
+      parse(DoubleGableProjectionSurfaceSchema, {
         kind: "double-gable-room",
         length: 22.55,
         width: 23.143,
@@ -178,3 +179,7 @@ describe("projection authoring contracts", () => {
     ).toThrow(/ridge|observer/);
   });
 });
+
+function parse<S extends Schema.Schema.AnyNoContext>(schema: S, value: unknown): Schema.Schema.Type<S> {
+  return Schema.decodeUnknownSync(schema)(value, { onExcessProperty: "error" });
+}

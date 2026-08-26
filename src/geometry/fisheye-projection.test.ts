@@ -1,10 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { mapUvToDomeDirection } from "../projection.js";
-import {
-  createFisheyeProjectionProfile,
-  directionToFisheyeUv,
-  fisheyeUvToDirection,
-} from "./fisheye-projection.js";
+import { createFisheyeProjectionProfile, directionToFisheyeUv, fisheyeUvToDirection } from "./fisheye-projection.js";
 import type { Vec3 } from "../projection.js";
 
 const squareZenith = createFisheyeProjectionProfile({
@@ -47,6 +43,7 @@ describe("general equidistant fisheye projection", () => {
     for (const direction of directions) {
       const uv = directionToFisheyeUv(direction, nadir270);
       expect(uv).not.toBeNull();
+      if (!uv) throw new Error("Expected the CAVE direction to map inside the carrier");
       const roundTrip = fisheyeUvToDirection(uv.u, uv.v, nadir270);
       expectVectorClose(roundTrip, normalize(direction));
     }

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as Schema from "effect/Schema";
 import type { SourceProjectionMode } from "./projection-profile.js";
 
 /** Exact aspect families available to the spatial image carrier. */
@@ -6,7 +6,7 @@ export const GENERATION_ASPECT_PRESETS = ["21:9", "16:9", "4:3", "1:1", "3:4", "
 export type GenerationAspectPreset = (typeof GENERATION_ASPECT_PRESETS)[number];
 export const CYLINDER_WALL_GENERATION_ASPECT_PRESET: GenerationAspectPreset = "21:9";
 
-export const GenerationAspectPresetSchema = z.enum(GENERATION_ASPECT_PRESETS);
+export const GenerationAspectPresetSchema = Schema.Literal(...GENERATION_ASPECT_PRESETS);
 
 export type GenerationAspectProfile = {
   id: GenerationAspectPreset;
@@ -65,147 +65,136 @@ export const GENERATION_ASPECT_PROFILES: Readonly<Record<GenerationAspectPreset,
   },
 };
 
-const finiteNumberSchema = z.number().finite();
-const positiveNumberSchema = finiteNumberSchema.positive();
-const positiveIntegerSchema = z.number().int().positive();
+const finiteNumberSchema = Schema.Number.pipe(Schema.finite());
+const positiveNumberSchema = finiteNumberSchema.pipe(Schema.positive());
+const positiveIntegerSchema = Schema.Number.pipe(Schema.int(), Schema.positive());
+const nonEmptyStringSchema = Schema.String.pipe(Schema.minLength(1));
 
 export const MAX_PLANAR_ROOF_ANCHORS = 8;
 export const PLANAR_ROOF_ANCHOR_ROLES = ["eave", "ridge", "valley", "break"] as const;
 
-export const PlanarRoofAnchorSchema = z
-  .object({
-    id: z.string().min(1),
-    /** Normalized cross-hall position. 0 is the left eave and 1 the right eave. */
-    position: finiteNumberSchema.min(0).max(1),
-    height: positiveNumberSchema,
-    role: z.enum(PLANAR_ROOF_ANCHOR_ROLES),
-  })
-  .strict();
+export const PlanarRoofAnchorSchema = Schema.Struct({
+  id: nonEmptyStringSchema,
+  /** Normalized cross-hall position. 0 is the left eave and 1 the right eave. */
+  position: finiteNumberSchema.pipe(Schema.between(0, 1)),
+  height: positiveNumberSchema,
+  role: Schema.Literal(...PLANAR_ROOF_ANCHOR_ROLES),
+});
 
-export const AngularSpatialAnchorsSchema = z
-  .object({
-    /** Artist-authored upper semantic field stop on the dome, in world elevation. */
-    semanticElevationDegrees: finiteNumberSchema.min(-89.9).max(89.9),
-    /** Artist-authored viewing-horizon field stop on the dome, in world elevation. */
-    horizonElevationDegrees: finiteNumberSchema.min(-89.9).max(89.9),
-  })
-  .strict();
+export const AngularSpatialAnchorsSchema = Schema.Struct({
+  /** Artist-authored upper semantic field stop on the dome, in world elevation. */
+  semanticElevationDegrees: finiteNumberSchema.pipe(Schema.between(-89.9, 89.9)),
+  /** Artist-authored viewing-horizon field stop on the dome, in world elevation. */
+  horizonElevationDegrees: finiteNumberSchema.pipe(Schema.between(-89.9, 89.9)),
+});
 
-export const PhysicalSpatialAnchorsSchema = z
-  .object({
-    /** Absolute venue-space height of the texture horizon above the floor. */
-    horizonHeight: positiveNumberSchema,
-  })
-  .strict();
+export const PhysicalSpatialAnchorsSchema = Schema.Struct({
+  /** Absolute venue-space height of the texture horizon above the floor. */
+  horizonHeight: positiveNumberSchema,
+});
 
-export const AngularProjectionSurfaceSchema = z
-  .object({
-    kind: z.literal("angular"),
-    anchors: AngularSpatialAnchorsSchema.optional(),
-  })
-  .strict();
+export const AngularProjectionSurfaceSchema = Schema.Struct({
+  kind: Schema.Literal("angular"),
+  anchors: Schema.optional(AngularSpatialAnchorsSchema),
+});
 
 /** A measured rectilinear room with an observer/projector reference point. */
-export const BoxRoomProjectionSurfaceSchema = z
-  .object({
-    kind: z.literal("box-room"),
-    width: positiveNumberSchema,
-    depth: positiveNumberSchema,
-    height: positiveNumberSchema,
-    eyeHeight: positiveNumberSchema,
-    eyeX: finiteNumberSchema,
-    eyeZ: finiteNumberSchema,
-    anchors: PhysicalSpatialAnchorsSchema.optional(),
-  })
-  .strict()
-  .superRefine((surface, ctx) => {
+export const BoxRoomProjectionSurfaceSchema = Schema.Struct({
+  kind: Schema.Literal("box-room"),
+  width: positiveNumberSchema,
+  depth: positiveNumberSchema,
+  height: positiveNumberSchema,
+  eyeHeight: positiveNumberSchema,
+  eyeX: finiteNumberSchema,
+  eyeZ: finiteNumberSchema,
+  anchors: Schema.optional(PhysicalSpatialAnchorsSchema),
+}).pipe(
+  Schema.filter((surface) => {
+    const issues: Schema.FilterIssue[] = [];
     if (surface.eyeHeight >= surface.height) {
-      ctx.addIssue({ code: "custom", path: ["eyeHeight"], message: "observer height must be inside the room" });
+      issues.push({ path: ["eyeHeight"], message: "observer height must be inside the room" });
     }
     if (Math.abs(surface.eyeX) >= surface.width * 0.5) {
-      ctx.addIssue({ code: "custom", path: ["eyeX"], message: "observer X must be inside the room" });
+      issues.push({ path: ["eyeX"], message: "observer X must be inside the room" });
     }
     if (Math.abs(surface.eyeZ) >= surface.depth * 0.5) {
-      ctx.addIssue({ code: "custom", path: ["eyeZ"], message: "observer Z must be inside the room" });
+      issues.push({ path: ["eyeZ"], message: "observer Z must be inside the room" });
     }
     if (surface.anchors && surface.anchors.horizonHeight >= surface.height) {
-      ctx.addIssue({
-        code: "custom",
+      issues.push({
         path: ["anchors", "horizonHeight"],
         message: "horizon anchor must remain inside the room",
       });
     }
-  });
+    return issues;
+  }),
+);
 
 /** An extruded piecewise-planar hall: four vertical walls, 2–7 roof planes, and no floor. */
-export const DoubleGableProjectionSurfaceSchema = z
-  .object({
-    kind: z.literal("double-gable-room"),
-    length: positiveNumberSchema,
-    width: positiveNumberSchema,
-    eaveHeight: positiveNumberSchema,
-    ridgeHeight: positiveNumberSchema,
-    valleyHeight: positiveNumberSchema,
-    ridgeInset: positiveNumberSchema,
-    /**
-     * Active piecewise-planar roof cross-section. Legacy symmetric fields
-     * remain readable while saved v4 projects migrate through this profile.
-     */
-    roofProfile: z.array(PlanarRoofAnchorSchema).min(3).max(MAX_PLANAR_ROOF_ANCHORS).optional(),
-    eyeHeight: positiveNumberSchema,
-    eyeX: finiteNumberSchema,
-    eyeZ: finiteNumberSchema,
-    anchors: PhysicalSpatialAnchorsSchema.optional(),
-  })
-  .strict()
-  .superRefine((surface, ctx) => {
+export const DoubleGableProjectionSurfaceSchema = Schema.Struct({
+  kind: Schema.Literal("double-gable-room"),
+  length: positiveNumberSchema,
+  width: positiveNumberSchema,
+  eaveHeight: positiveNumberSchema,
+  ridgeHeight: positiveNumberSchema,
+  valleyHeight: positiveNumberSchema,
+  ridgeInset: positiveNumberSchema,
+  /**
+   * Active piecewise-planar roof cross-section. Legacy symmetric fields
+   * remain readable while saved v4 projects migrate through this profile.
+   */
+  roofProfile: Schema.optional(
+    Schema.Array(PlanarRoofAnchorSchema).pipe(Schema.minItems(3), Schema.maxItems(MAX_PLANAR_ROOF_ANCHORS)),
+  ),
+  eyeHeight: positiveNumberSchema,
+  eyeX: finiteNumberSchema,
+  eyeZ: finiteNumberSchema,
+  anchors: Schema.optional(PhysicalSpatialAnchorsSchema),
+}).pipe(
+  Schema.filter((surface) => {
+    const issues: Schema.FilterIssue[] = [];
     // The symmetric fields are a legacy serialization fallback. Once an
     // explicit planar profile exists, it is the only authoritative roof.
     if (!surface.roofProfile) {
       if (surface.ridgeHeight <= Math.max(surface.eaveHeight, surface.valleyHeight)) {
-        ctx.addIssue({
-          code: "custom",
+        issues.push({
           path: ["ridgeHeight"],
           message: "ridge height must be above the eaves and central valley",
         });
       }
       if (surface.ridgeInset >= surface.width * 0.5) {
-        ctx.addIssue({
-          code: "custom",
+        issues.push({
           path: ["ridgeInset"],
           message: "ridge inset must remain inside each half of the hall",
         });
       }
       if (surface.eyeHeight >= Math.min(surface.eaveHeight, surface.valleyHeight)) {
-        ctx.addIssue({
-          code: "custom",
+        issues.push({
           path: ["eyeHeight"],
           message: "observer height must remain below the lowest roof seam",
         });
       }
     }
     if (Math.abs(surface.eyeX) >= surface.length * 0.5) {
-      ctx.addIssue({ code: "custom", path: ["eyeX"], message: "observer X must be inside the hall" });
+      issues.push({ path: ["eyeX"], message: "observer X must be inside the hall" });
     }
     if (Math.abs(surface.eyeZ) >= surface.width * 0.5) {
-      ctx.addIssue({ code: "custom", path: ["eyeZ"], message: "observer Z must be inside the hall" });
+      issues.push({ path: ["eyeZ"], message: "observer Z must be inside the hall" });
     }
     if (surface.roofProfile) {
       if (Math.abs(surface.roofProfile[0].position) > 0.000_001) {
-        ctx.addIssue({ code: "custom", path: ["roofProfile", 0, "position"], message: "roof profile must start at 0" });
+        issues.push({ path: ["roofProfile", 0, "position"], message: "roof profile must start at 0" });
       }
       const last = surface.roofProfile[surface.roofProfile.length - 1];
       if (Math.abs(last.position - 1) > 0.000_001) {
-        ctx.addIssue({
-          code: "custom",
+        issues.push({
           path: ["roofProfile", surface.roofProfile.length - 1, "position"],
           message: "roof profile must end at 1",
         });
       }
       for (let index = 1; index < surface.roofProfile.length; index += 1) {
         if (surface.roofProfile[index].position - surface.roofProfile[index - 1].position < 0.001) {
-          ctx.addIssue({
-            code: "custom",
+          issues.push({
             path: ["roofProfile", index, "position"],
             message: "roof anchors must be strictly ordered",
           });
@@ -213,8 +202,7 @@ export const DoubleGableProjectionSurfaceSchema = z
       }
       const minimumRoofHeight = Math.min(...surface.roofProfile.map((anchor) => anchor.height));
       if (surface.eyeHeight >= minimumRoofHeight) {
-        ctx.addIssue({
-          code: "custom",
+        issues.push({
           path: ["eyeHeight"],
           message: "observer height must remain below every planar roof anchor",
         });
@@ -224,86 +212,87 @@ export const DoubleGableProjectionSurfaceSchema = z
       ? Math.min(...surface.roofProfile.map((anchor) => anchor.height))
       : Math.min(surface.eaveHeight, surface.valleyHeight);
     if (surface.anchors && surface.anchors.horizonHeight >= anchorCeiling) {
-      ctx.addIssue({
-        code: "custom",
+      issues.push({
         path: ["anchors", "horizonHeight"],
         message: "horizon anchor must remain below every roof plane",
       });
     }
-  });
+    return issues;
+  }),
+);
 
 /** A measured circular cylinder with a vertical observer reference. */
-export const CylinderProjectionSurfaceSchema = z
-  .object({
-    kind: z.literal("cylinder"),
-    radius: positiveNumberSchema,
-    height: positiveNumberSchema,
-    eyeHeight: positiveNumberSchema,
-    anchors: PhysicalSpatialAnchorsSchema.optional(),
-  })
-  .strict()
-  .superRefine((surface, ctx) => {
+export const CylinderProjectionSurfaceSchema = Schema.Struct({
+  kind: Schema.Literal("cylinder"),
+  radius: positiveNumberSchema,
+  height: positiveNumberSchema,
+  eyeHeight: positiveNumberSchema,
+  anchors: Schema.optional(PhysicalSpatialAnchorsSchema),
+}).pipe(
+  Schema.filter((surface) => {
+    const issues: Schema.FilterIssue[] = [];
     if (surface.eyeHeight >= surface.height) {
-      ctx.addIssue({ code: "custom", path: ["eyeHeight"], message: "observer height must be inside the cylinder" });
+      issues.push({ path: ["eyeHeight"], message: "observer height must be inside the cylinder" });
     }
     if (surface.anchors && surface.anchors.horizonHeight >= surface.height) {
-      ctx.addIssue({
-        code: "custom",
+      issues.push({
         path: ["anchors", "horizonHeight"],
         message: "horizon anchor must remain inside the cylinder",
       });
     }
-  });
+    return issues;
+  }),
+);
 
-export const ProjectionSurfaceSchema = z.discriminatedUnion("kind", [
+export const ProjectionSurfaceSchema = Schema.Union(
   AngularProjectionSurfaceSchema,
   BoxRoomProjectionSurfaceSchema,
   DoubleGableProjectionSurfaceSchema,
   CylinderProjectionSurfaceSchema,
-]);
+);
 
-export const CarrierRasterSchema = z
-  .object({
-    aspectPreset: GenerationAspectPresetSchema,
-    width: positiveIntegerSchema,
-    height: positiveIntegerSchema,
-    /**
-     * full-frame intentionally normalizes the carrier over the complete
-     * rectangle. It is a topology map, so it need not look undistorted as a
-     * conventional camera image. Physical preview is the truth surface.
-     */
-    domainFit: z.literal("full-frame"),
-  })
-  .strict()
-  .superRefine((raster, ctx) => {
+export const CarrierRasterSchema = Schema.Struct({
+  aspectPreset: GenerationAspectPresetSchema,
+  width: positiveIntegerSchema,
+  height: positiveIntegerSchema,
+  /**
+   * full-frame intentionally normalizes the carrier over the complete
+   * rectangle. It is a topology map, so it need not look undistorted as a
+   * conventional camera image. Physical preview is the truth surface.
+   */
+  domainFit: Schema.Literal("full-frame"),
+}).pipe(
+  Schema.filter((raster) => {
+    const issues: Schema.FilterIssue[] = [];
     if (raster.width % 16 !== 0) {
-      ctx.addIssue({ code: "custom", path: ["width"], message: "carrier width must be a multiple of 16" });
+      issues.push({ path: ["width"], message: "carrier width must be a multiple of 16" });
     }
     if (raster.height % 16 !== 0) {
-      ctx.addIssue({ code: "custom", path: ["height"], message: "carrier height must be a multiple of 16" });
+      issues.push({ path: ["height"], message: "carrier height must be a multiple of 16" });
     }
     const expected = GENERATION_ASPECT_PROFILES[raster.aspectPreset].ratio;
     const actual = raster.width / raster.height;
     if (Math.abs(actual - expected) > 0.001) {
-      ctx.addIssue({
-        code: "custom",
+      issues.push({
         path: ["aspectPreset"],
         message: `carrier dimensions must preserve the ${raster.aspectPreset} aspect family`,
       });
     }
     for (const issue of gptImage2RasterIssues(raster.width, raster.height)) {
-      ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+      issues.push({ path: issue.path, message: issue.message });
     }
-  });
+    return issues;
+  }),
+);
 
-export type AngularProjectionSurface = z.infer<typeof AngularProjectionSurfaceSchema>;
-export type BoxRoomProjectionSurface = z.infer<typeof BoxRoomProjectionSurfaceSchema>;
-export type PlanarRoofAnchor = z.infer<typeof PlanarRoofAnchorSchema>;
-export type DoubleGableProjectionSurface = z.infer<typeof DoubleGableProjectionSurfaceSchema>;
-export type CylinderProjectionSurface = z.infer<typeof CylinderProjectionSurfaceSchema>;
-export type ProjectionSurface = z.infer<typeof ProjectionSurfaceSchema>;
-export type AngularSpatialAnchors = z.infer<typeof AngularSpatialAnchorsSchema>;
-export type PhysicalSpatialAnchors = z.infer<typeof PhysicalSpatialAnchorsSchema>;
+export type AngularProjectionSurface = Schema.Schema.Type<typeof AngularProjectionSurfaceSchema>;
+export type BoxRoomProjectionSurface = Schema.Schema.Type<typeof BoxRoomProjectionSurfaceSchema>;
+export type PlanarRoofAnchor = Schema.Schema.Type<typeof PlanarRoofAnchorSchema>;
+export type DoubleGableProjectionSurface = Schema.Schema.Type<typeof DoubleGableProjectionSurfaceSchema>;
+export type CylinderProjectionSurface = Schema.Schema.Type<typeof CylinderProjectionSurfaceSchema>;
+export type ProjectionSurface = Schema.Schema.Type<typeof ProjectionSurfaceSchema>;
+export type AngularSpatialAnchors = Schema.Schema.Type<typeof AngularSpatialAnchorsSchema>;
+export type PhysicalSpatialAnchors = Schema.Schema.Type<typeof PhysicalSpatialAnchorsSchema>;
 
 export type ProjectionSurfacePhysicalHorizon = {
   /** World-space height of the authored texture-horizon plane above the venue floor. */
@@ -312,7 +301,7 @@ export type ProjectionSurfacePhysicalHorizon = {
   upperLimit: number;
   reference: "venue-floor";
 };
-export type CarrierRaster = z.infer<typeof CarrierRasterSchema>;
+export type CarrierRaster = Schema.Schema.Type<typeof CarrierRasterSchema>;
 
 export const DEFAULT_ANGULAR_PROJECTION_SURFACE: AngularProjectionSurface = {
   kind: "angular",
@@ -509,7 +498,6 @@ export function exactGenerationAspectForDimensions(
     ) ?? null
   );
 }
-
 
 export function gptImage2RatioForRaster(raster: Pick<CarrierRaster, "width" | "height">): string {
   return `${raster.width}:${raster.height}`;

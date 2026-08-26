@@ -1,12 +1,9 @@
 import { describe, expect, test } from "vitest";
 import { carrierRasterForAspect, defaultProjectionSurface } from "../lib/shared/contracts/projection-authoring.js";
-import {
-  defaultImageSpatialSpec,
-  type ImageGenerationProvenanceV1,
-} from "../lib/shared/contracts/composition-sequence.js";
+import { createInitialZenithDocument, defaultImageSpatialSpec, selectedComposition } from "../domain/project.js";
+import type { ImageGenerationProvenance } from "../domain/schema.js";
 import {
   embedZenithPngProvenance,
-  embedZenithProvenanceInRevisionMedia,
   readZenithPngProvenance,
   readZenithProvenanceFromPngDataUrl,
 } from "./png-zenith-provenance.js";
@@ -32,13 +29,11 @@ describe("Zenith PNG spatial provenance", () => {
     expect(second.length).toBeLessThan(first.length + 200);
   });
 
-  test("round-trips revision media without re-encoding its pixels", () => {
-    const media = embedZenithProvenanceInRevisionMedia(
-      { kind: "image", url: ONE_PIXEL_PNG, mime: "image/png", name: "generated.png" },
-      provenance("cave-270"),
-    );
+  test("round-trips a data URL without re-encoding its pixels", () => {
+    const embedded = embedZenithPngProvenance(dataUrlBytes(ONE_PIXEL_PNG), provenance("cave-270"));
+    const dataUrl = `data:image/png;base64,${Buffer.from(embedded).toString("base64")}`;
 
-    expect(readZenithProvenanceFromPngDataUrl(media.url)).toEqual(provenance("cave-270"));
+    expect(readZenithProvenanceFromPngDataUrl(dataUrl)).toEqual(provenance("cave-270"));
   });
 
   test("rejects bytes that only claim to be PNG", () => {
@@ -46,21 +41,22 @@ describe("Zenith PNG spatial provenance", () => {
   });
 });
 
-function provenance(projectionMode: "cylinder-nadir" | "cave-270"): ImageGenerationProvenanceV1 {
+function provenance(projectionMode: "cylinder-nadir" | "cave-270"): ImageGenerationProvenance {
+  const document = createInitialZenithDocument();
+  const draft = structuredClone(selectedComposition(document).plateDraft);
+  draft.projectionMode = projectionMode;
+  draft.surface = defaultProjectionSurface(projectionMode);
   const carrierRaster = carrierRasterForAspect("16:9");
+  draft.raster = carrierRaster;
   return {
-    version: 1,
+    version: 2,
+    projectId: "project-1",
     compositionId: "composition-1",
-    sourceRevisionId: "revision-plate-1",
-    operatorId: "inpaint-plate-sketch",
+    plateCommitId: "plate-commit-1",
+    inputDigest: "a".repeat(64),
     model: "gpt_image_2",
     carrierRaster,
-    spatialSpec: defaultImageSpatialSpec({
-      projectionMode,
-      surface: defaultProjectionSurface(projectionMode),
-      targetWidth: carrierRaster.width,
-      targetHeight: carrierRaster.height,
-    }),
+    spatialSpec: defaultImageSpatialSpec(draft),
   };
 }
 

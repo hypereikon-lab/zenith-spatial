@@ -1,15 +1,18 @@
 {
-  "extends": "./.svelte-kit/tsconfig.json",
   "compilerOptions": {
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noEmit": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "noImplicitAny": true,
-    "strictNullChecks": false,
     "strict": true,
+    "strictNullChecks": true,
     "target": "ES2022",
-    "types": ["node", "@webgpu/types"]
-  }
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client", "@webgpu/types"],
+    "allowImportingTsExtensions": false,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "server/**/*.ts", "vite.config.ts", "vitest.config.ts"]
 }

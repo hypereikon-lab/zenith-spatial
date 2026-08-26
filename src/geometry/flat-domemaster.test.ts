@@ -24,9 +24,11 @@ describe("flat domemaster coordinate spaces", () => {
     const metrics = { cx: 50, cy: 50, radius: 50 };
     const sourceNorth = { x: 50, y: 25 };
     const displayedSouth = sourceFlatToDisplayFlatPoint(sourceNorth, 50, 50, Math.PI);
+    if (!displayedSouth) throw new Error("Expected the rotated source point inside the display carrier");
 
     const point = flatDisplayPointToDomePoint(displayedSouth, metrics, { rotationRadians: Math.PI });
     const direction = flatDisplayPointToDomeDirection(displayedSouth, metrics, { rotationRadians: Math.PI });
+    if (!point || !direction) throw new Error("Expected the rotated display point inside the carrier");
 
     expect(point).toEqual({ radius: 0.5, azimuth: 0 });
     expect(direction[0]).toBeCloseTo(0);
@@ -58,6 +60,7 @@ describe("flat domemaster coordinate spaces", () => {
     const rotationRadians = Math.PI * 0.37;
 
     const sourcePoint = domeDirectionToFlatPoint(sourceDirection, metrics.cx, metrics.cy, metrics.radius);
+    if (!sourcePoint) throw new Error("Expected the source direction inside the flat carrier");
     const displayPoint = sourceFlatToDisplayFlatPoint(sourcePoint, metrics.cx, metrics.cy, rotationRadians);
     if (!displayPoint) throw new Error("Expected equidistant display point");
 

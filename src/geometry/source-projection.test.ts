@@ -301,12 +301,14 @@ function normalize(vector: Vec3): Vec3 {
   return [vector[0] / length, vector[1] / length, vector[2] / length];
 }
 
-function expectVectorClose(actual: Vec3 | null, expected: Vec3): void {
+function expectVectorClose(actual: Vec3 | null, expected: Vec3 | null): void {
   expect(actual).not.toBeNull();
+  expect(expected).not.toBeNull();
   const value = actual as Vec3;
+  const expectedValue = expected as Vec3;
   for (let index = 0; index < 3; index += 1) {
     // The authoritative kernel intentionally follows WebGPU f32 arithmetic on
     // both CPU and GPU execution paths.
-    expect(value[index]).toBeCloseTo(expected[index], 5);
+    expect(value[index]).toBeCloseTo(expectedValue[index], 5);
   }
 }

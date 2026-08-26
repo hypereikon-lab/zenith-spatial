@@ -11,12 +11,12 @@ const webGpuGlobals = {
 
 export default [
   {
-    ignores: ["dist/**", "build/**", ".svelte-kit/**", "node_modules/**", "*.log"],
+    ignores: ["dist/**", ".zenith-runtime/**", "node_modules/**", "*.log"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["src/**/*.ts", "*.config.js"],
+    files: ["src/**/*.{ts,tsx}", "server/**/*.ts", "*.config.{js,ts}"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
@@ -33,7 +33,7 @@ export default [
     },
   },
   {
-    files: ["src/**/*.test.ts"],
+    files: ["src/**/*.test.{ts,tsx}", "server/**/*.test.ts"],
     languageOptions: {
       globals: {
         ...globals.vitest,

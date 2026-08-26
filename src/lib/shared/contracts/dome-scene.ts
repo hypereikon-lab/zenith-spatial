@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as Schema from "effect/Schema";
 import {
   CarrierRasterSchema,
   ProjectionSurfaceSchema,
@@ -15,101 +15,103 @@ export const DOME_SCENE_VERSION = 5;
 export const DOME_SCENE_PROJECTION_MODES = SOURCE_PROJECTION_MODES;
 export const DOME_SCENE_PLATE_FITS = ["contain", "cover", "stretch"] as const;
 
-const finiteNumberSchema = z.number().finite();
+const finiteNumberSchema = Schema.Number.pipe(Schema.finite());
+const nonEmptyStringSchema = Schema.String.pipe(Schema.minLength(1));
 
-const DomeScenePlateCornerOffsetSchema = z.object({ x: finiteNumberSchema, y: finiteNumberSchema }).strict();
+const DomeScenePlateCornerOffsetSchema = Schema.mutable(
+  Schema.Struct({ x: finiteNumberSchema, y: finiteNumberSchema }),
+);
 
-const DomeScenePlateCornerOffsetsSchema = z
-  .object({
+const DomeScenePlateCornerOffsetsSchema = Schema.mutable(
+  Schema.Struct({
     nw: DomeScenePlateCornerOffsetSchema,
     ne: DomeScenePlateCornerOffsetSchema,
     se: DomeScenePlateCornerOffsetSchema,
     sw: DomeScenePlateCornerOffsetSchema,
-  })
-  .strict();
+  }),
+);
 
-export const DomeScenePlatePlacementSchema = z
-  .object({
+export const DomeScenePlatePlacementSchema = Schema.mutable(
+  Schema.Struct({
     azimuth: finiteNumberSchema,
     radius: finiteNumberSchema,
     scale: finiteNumberSchema,
     spin: finiteNumberSchema,
     opacity: finiteNumberSchema,
-    flipX: z.boolean().optional().default(false),
-    flipY: z.boolean().optional().default(false),
+    flipX: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+    flipY: Schema.optionalWith(Schema.Boolean, { default: () => false }),
     cornerOffsets: DomeScenePlateCornerOffsetsSchema,
-  })
-  .strict();
+  }),
+);
 
-export const DomeScenePlateSourceSchema = z
-  .object({
-    assetId: z.string().min(1).optional(),
-    name: z.string().min(1),
+export const DomeScenePlateSourceSchema = Schema.mutable(
+  Schema.Struct({
+    assetId: Schema.optional(nonEmptyStringSchema),
+    name: nonEmptyStringSchema,
     width: finiteNumberSchema,
     height: finiteNumberSchema,
     aspect: finiteNumberSchema,
-    url: z
-      .string()
-      .refine((url) => !url.startsWith("blob:"), "object URLs are runtime-only and cannot be stored in Dome Scene")
-      .optional(),
-    mime: z.string().optional(),
-  })
-  .strict();
+    url: Schema.optional(
+      Schema.String.pipe(
+        Schema.filter(
+          (url) => !url.startsWith("blob:") || "object URLs are runtime-only and cannot be stored in Dome Scene",
+        ),
+      ),
+    ),
+    mime: Schema.optional(Schema.String),
+  }),
+);
 
-export const DomeScenePlateLayerSchema = z
-  .object({
-    id: z.string().min(1),
-    name: z.string().min(1),
+export const DomeScenePlateLayerSchema = Schema.mutable(
+  Schema.Struct({
+    id: nonEmptyStringSchema,
+    name: nonEmptyStringSchema,
     index: finiteNumberSchema,
     source: DomeScenePlateSourceSchema,
     placement: DomeScenePlatePlacementSchema,
-    visible: z.boolean().optional().default(true),
-    locked: z.boolean().optional().default(false),
-  })
-  .strict();
+    visible: Schema.optionalWith(Schema.Boolean, { default: () => true }),
+    locked: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+  }),
+);
 
-export const DomeSceneFrame0Schema = z
-  .object({
-    plateFit: z.enum(DOME_SCENE_PLATE_FITS).optional().default("contain"),
-    plateFeather: finiteNumberSchema.optional().default(0.02),
-    activeLayerId: z.string().nullable().optional().default(null),
-    plateLayers: z.array(DomeScenePlateLayerSchema),
-  })
-  .strict();
+export const DomeSceneFrame0Schema = Schema.mutable(
+  Schema.Struct({
+    plateFit: Schema.optionalWith(Schema.Literal(...DOME_SCENE_PLATE_FITS), { default: () => "contain" as const }),
+    plateFeather: Schema.optionalWith(finiteNumberSchema, { default: () => 0.02 }),
+    activeLayerId: Schema.optionalWith(Schema.NullOr(nonEmptyStringSchema), { default: () => null }),
+    plateLayers: Schema.mutable(Schema.Array(DomeScenePlateLayerSchema)),
+  }),
+);
 
-export const DomeSceneSchema = z
-  .object({
-    version: z.literal(DOME_SCENE_VERSION),
-    projectionMode: z.enum(DOME_SCENE_PROJECTION_MODES),
+export const DomeSceneSchema = Schema.mutable(
+  Schema.Struct({
+    version: Schema.Literal(DOME_SCENE_VERSION),
+    projectionMode: Schema.Literal(...DOME_SCENE_PROJECTION_MODES),
     surface: ProjectionSurfaceSchema,
     raster: CarrierRasterSchema,
     guideSplit: finiteNumberSchema,
     horizonSplit: finiteNumberSchema,
     frame0: DomeSceneFrame0Schema,
-  })
-  .strict()
-  .superRefine((scene, ctx) => {
+  }),
+).pipe(
+  Schema.filter((scene) => {
     if (!projectionSurfaceMatchesMode(scene.surface, scene.projectionMode)) {
-      ctx.addIssue({
-        code: "custom",
+      return {
         path: ["surface"],
         message: `surface kind ${scene.surface.kind} does not match projection mode ${scene.projectionMode}`,
-      });
+      };
     }
-  })
-  .transform((scene) => ({
-    ...scene,
-    surface: cloneProjectionSurface(scene.surface),
-    raster: cloneCarrierRaster(scene.raster),
-  }));
+    return true;
+  }),
+);
 
 export type DomeSceneProjectionMode = (typeof DOME_SCENE_PROJECTION_MODES)[number];
 export type DomeScenePlateFit = (typeof DOME_SCENE_PLATE_FITS)[number];
-export type DomeScenePlatePlacement = z.infer<typeof DomeScenePlatePlacementSchema>;
-export type DomeScenePlateSource = z.infer<typeof DomeScenePlateSourceSchema>;
-export type DomeScenePlateLayer = z.infer<typeof DomeScenePlateLayerSchema>;
-export type DomeSceneFrame0 = z.infer<typeof DomeSceneFrame0Schema>;
-export type DomeScene = z.infer<typeof DomeSceneSchema>;
+export type DomeScenePlatePlacement = Schema.Schema.Type<typeof DomeScenePlatePlacementSchema>;
+export type DomeScenePlateSource = Schema.Schema.Type<typeof DomeScenePlateSourceSchema>;
+export type DomeScenePlateLayer = Schema.Schema.Type<typeof DomeScenePlateLayerSchema>;
+export type DomeSceneFrame0 = Schema.Schema.Type<typeof DomeSceneFrame0Schema>;
+export type DomeScene = Schema.Schema.Type<typeof DomeSceneSchema>;
 
 export const PROJECT_DEFAULT_DOME_SCENE: DomeScene = {
   version: DOME_SCENE_VERSION,
@@ -131,5 +133,10 @@ export function cloneDefaultDomeScene(): DomeScene {
 }
 
 export function parseDomeScene(value: unknown): DomeScene {
-  return DomeSceneSchema.parse(value);
+  const scene = Schema.decodeUnknownSync(DomeSceneSchema)(value, { onExcessProperty: "error" });
+  return {
+    ...scene,
+    surface: cloneProjectionSurface(scene.surface),
+    raster: cloneCarrierRaster(scene.raster),
+  };
 }

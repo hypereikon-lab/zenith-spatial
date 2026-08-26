@@ -3,6 +3,7 @@ import {
   identityQuaternion,
   multiplyQuaternions,
   normalizeQuaternion,
+  quaternionFromAxisAngle,
   rotateVectorByQuaternion,
   slerpQuaternion,
   type Quaternion,
@@ -13,6 +14,13 @@ export type DeviceOrientationAngles = {
   readonly alpha: number;
   readonly beta: number;
   readonly gamma: number;
+  readonly screenAngleDegrees?: number;
+};
+
+export type ZenithCameraBasis = {
+  readonly forward: Vec3;
+  readonly up: Vec3;
+  readonly right: Vec3;
 };
 
 export type OrientationFilterOptions = {
@@ -36,6 +44,8 @@ export const DEFAULT_ORIENTATION_FILTER: OrientationFilterOptions = {
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
 const DEVICE_VIEW_FORWARD: Vec3 = [0, 0, -1];
+const DEVICE_SCREEN_UP: Vec3 = [0, 1, 0];
+const DEVICE_SCREEN_RIGHT: Vec3 = [1, 0, 0];
 
 export class StabilizedDeviceOrientation {
   private baseline: Quaternion | null = null;
@@ -47,7 +57,7 @@ export class StabilizedDeviceOrientation {
 
   ingest(angles: DeviceOrientationAngles): boolean {
     const firstReading = this.latest === null;
-    const current = quaternionFromDeviceOrientation(angles);
+    const current = screenAdjustedDeviceOrientation(angles);
     this.latest = current;
     this.baseline ??= current;
     this.target = relativeDeviceOrientation(this.baseline, current);
@@ -90,18 +100,51 @@ export function quaternionFromDeviceOrientation({ alpha, beta, gamma }: DeviceOr
   ]);
 }
 
+/** Aligns the W3C device frame with the visible screen in either portrait or landscape. */
+export function screenAdjustedDeviceOrientation(angles: DeviceOrientationAngles): Quaternion {
+  const device = quaternionFromDeviceOrientation(angles);
+  const screen = quaternionFromAxisAngle([0, 0, 1], (angles.screenAngleDegrees ?? 0) * DEG_TO_RAD);
+  return multiplyQuaternions(device, screen);
+}
+
+/** Normalizes the legacy clockwise Window angle to the modern counter-clockwise Screen angle. */
+export function screenOrientationCompensationDegrees(
+  modernAngle: number | null | undefined,
+  legacyAngle: number | null | undefined,
+): number {
+  if (typeof modernAngle === "number" && Number.isFinite(modernAngle)) return modernAngle;
+  return typeof legacyAngle === "number" && Number.isFinite(legacyAngle) ? -legacyAngle : 0;
+}
+
 /** Expresses the current device pose in the coordinate frame captured at recenter. */
 export function relativeDeviceOrientation(baseline: Quaternion, current: Quaternion): Quaternion {
   return multiplyQuaternions(conjugateQuaternion(normalizeQuaternion(baseline)), normalizeQuaternion(current));
 }
 
-/**
- * Maps the phone's physical back-facing viewing ray into Zenith's Y-up, +Z-forward camera convention.
- * Roll is intentionally removed by the renderer so a spatial horizon remains level on screen.
- */
+/** Maps the complete relative phone pose into Zenith's Y-up, +Z-forward OpenGL camera convention. */
+export function zenithCameraBasisFromRelativeDeviceOrientation(relative: Quaternion): ZenithCameraBasis {
+  return {
+    forward: deviceVectorToZenith(rotateVectorByQuaternion(DEVICE_VIEW_FORWARD, relative)),
+    up: deviceVectorToZenith(rotateVectorByQuaternion(DEVICE_SCREEN_UP, relative)),
+    right: deviceVectorToZenith(rotateVectorByQuaternion(DEVICE_SCREEN_RIGHT, relative)),
+  };
+}
+
+/** Retained for consumers that only need the camera's viewing ray. */
 export function zenithForwardFromRelativeDeviceOrientation(relative: Quaternion): Vec3 {
-  const deviceDirection = rotateVectorByQuaternion(DEVICE_VIEW_FORWARD, relative);
-  return normalize([deviceDirection[0], deviceDirection[1], -deviceDirection[2]]);
+  return zenithCameraBasisFromRelativeDeviceOrientation(relative).forward;
+}
+
+/** Applies authored/touch yaw and pitch without collapsing the sensor pose into Euler angles. */
+export function offsetZenithCameraBasis(
+  basis: ZenithCameraBasis,
+  yawDegrees: number,
+  pitchDegrees: number,
+): ZenithCameraBasis {
+  const yaw = quaternionFromAxisAngle([0, 1, 0], yawDegrees * DEG_TO_RAD);
+  const yawed = rotateCameraBasis(basis, yaw);
+  const pitch = quaternionFromAxisAngle(yawed.right, pitchDegrees * DEG_TO_RAD);
+  return rotateCameraBasis(yawed, pitch);
 }
 
 export function quaternionAngularDistanceDegrees(left: Quaternion, right: Quaternion): number {
@@ -136,4 +179,17 @@ export function stabilizeDeviceOrientation(
 
 export function identityDeviceOrientation(): Quaternion {
   return identityQuaternion();
+}
+
+function rotateCameraBasis(basis: ZenithCameraBasis, rotation: Quaternion): ZenithCameraBasis {
+  return {
+    forward: normalize(rotateVectorByQuaternion(basis.forward, rotation)),
+    up: normalize(rotateVectorByQuaternion(basis.up, rotation)),
+    right: normalize(rotateVectorByQuaternion(basis.right, rotation)),
+  };
+}
+
+/** The device's +X points opposite OpenGL camera-right when Zenith looks along +Z. */
+function deviceVectorToZenith(vector: Vec3): Vec3 {
+  return normalize([-vector[0], vector[1], -vector[2]]);
 }

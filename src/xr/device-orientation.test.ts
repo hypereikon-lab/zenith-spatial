@@ -6,8 +6,12 @@ import {
   quaternionAngularDistanceDegrees,
   quaternionFromDeviceOrientation,
   relativeDeviceOrientation,
+  screenAdjustedDeviceOrientation,
+  screenOrientationCompensationDegrees,
   StabilizedDeviceOrientation,
   stabilizeDeviceOrientation,
+  offsetZenithCameraBasis,
+  zenithCameraBasisFromRelativeDeviceOrientation,
   zenithForwardFromRelativeDeviceOrientation,
 } from "./device-orientation.js";
 
@@ -17,6 +21,10 @@ const closeQuaternion = (left: Quaternion, right: Quaternion, precision = 6) => 
     Math.hypot(...left.map((value, index) => value + right[index]!)),
   );
   expect(distance).toBeCloseTo(0, precision);
+};
+
+const closeVector = (actual: readonly number[], expected: readonly number[], precision = 6) => {
+  expect(actual).toEqual(expected.map((value) => expect.closeTo(value, precision)));
 };
 
 describe("device orientation quaternion pipeline", () => {
@@ -50,7 +58,7 @@ describe("device orientation quaternion pipeline", () => {
     ).toBeCloseTo(1, 5);
   });
 
-  test("maps relative heading and pitch into Zenith's level Y-up view", () => {
+  test("maps physical right turns and upward turns into Zenith's camera convention", () => {
     const baseline = quaternionFromDeviceOrientation({ alpha: 0, beta: 90, gamma: 0 });
     const rightTurn = relativeDeviceOrientation(
       baseline,
@@ -61,27 +69,59 @@ describe("device orientation quaternion pipeline", () => {
       quaternionFromDeviceOrientation({ alpha: 0, beta: 120, gamma: 0 }),
     );
 
-    expect(zenithForwardFromRelativeDeviceOrientation(rightTurn)).toEqual([
-      expect.closeTo(0.5, 6),
-      expect.closeTo(0, 6),
-      expect.closeTo(Math.sqrt(3) / 2, 6),
-    ]);
-    expect(zenithForwardFromRelativeDeviceOrientation(upwardTurn)).toEqual([
-      expect.closeTo(0, 6),
-      expect.closeTo(0.5, 6),
-      expect.closeTo(Math.sqrt(3) / 2, 6),
-    ]);
+    closeVector(zenithForwardFromRelativeDeviceOrientation(rightTurn), [-0.5, 0, Math.sqrt(3) / 2]);
+    closeVector(zenithForwardFromRelativeDeviceOrientation(upwardTurn), [0, 0.5, Math.sqrt(3) / 2]);
   });
 
-  test("keeps the viewing ray stable when the screen moves from portrait to landscape", () => {
-    const portrait = quaternionFromDeviceOrientation({ alpha: 0, beta: 90, gamma: 0 });
+  test("keeps the complete camera basis stable when the screen moves from portrait to landscape", () => {
+    const portrait = screenAdjustedDeviceOrientation({ alpha: 0, beta: 90, gamma: 0, screenAngleDegrees: 0 });
     // W3C's equivalent upright pose with the top of the screen pointing right.
-    const landscape = quaternionFromDeviceOrientation({ alpha: 270, beta: 0, gamma: 90 });
-    expect(zenithForwardFromRelativeDeviceOrientation(relativeDeviceOrientation(portrait, landscape))).toEqual([
-      expect.closeTo(0, 6),
-      expect.closeTo(0, 6),
-      expect.closeTo(1, 6),
-    ]);
+    const landscape = screenAdjustedDeviceOrientation({ alpha: 270, beta: 0, gamma: 90, screenAngleDegrees: 90 });
+    const basis = zenithCameraBasisFromRelativeDeviceOrientation(relativeDeviceOrientation(portrait, landscape));
+    closeVector(basis.forward, [0, 0, 1]);
+    closeVector(basis.up, [0, 1, 0]);
+    closeVector(basis.right, [-1, 0, 0]);
+  });
+
+  test("normalizes iPhone's legacy clockwise screen angle to the modern convention", () => {
+    expect(screenOrientationCompensationDegrees(90, -90)).toBe(90);
+    expect(screenOrientationCompensationDegrees(undefined, -90)).toBe(90);
+    expect(screenOrientationCompensationDegrees(undefined, 90)).toBe(-90);
+    expect(screenOrientationCompensationDegrees(undefined, undefined)).toBe(0);
+  });
+
+  test("crosses the zenith and reaches the rear hemisphere without flipping the camera basis", () => {
+    const baseline = quaternionFromDeviceOrientation({ alpha: 0, beta: 90, gamma: 0 });
+    const before = zenithCameraBasisFromRelativeDeviceOrientation(
+      relativeDeviceOrientation(baseline, quaternionFromDeviceOrientation({ alpha: 0, beta: 179, gamma: 0 })),
+    );
+    const zenith = zenithCameraBasisFromRelativeDeviceOrientation(
+      relativeDeviceOrientation(baseline, quaternionFromDeviceOrientation({ alpha: 0, beta: 180, gamma: 0 })),
+    );
+    const after = zenithCameraBasisFromRelativeDeviceOrientation(
+      relativeDeviceOrientation(baseline, quaternionFromDeviceOrientation({ alpha: 0, beta: 181, gamma: 0 })),
+    );
+    const behind = zenithCameraBasisFromRelativeDeviceOrientation(
+      relativeDeviceOrientation(baseline, quaternionFromDeviceOrientation({ alpha: 0, beta: 270, gamma: 0 })),
+    );
+
+    closeVector(zenith.forward, [0, 1, 0]);
+    closeVector(zenith.up, [0, 0, -1]);
+    closeVector(behind.forward, [0, 0, -1]);
+    closeVector(behind.up, [0, -1, 0]);
+    expect(dot(before.forward, after.forward)).toBeGreaterThan(0.999);
+    expect(dot(before.up, after.up)).toBeGreaterThan(0.999);
+  });
+
+  test("applies authored and touch offsets to the full basis instead of extracting Euler angles", () => {
+    const basis = zenithCameraBasisFromRelativeDeviceOrientation(identityDeviceOrientation());
+    const yawed = offsetZenithCameraBasis(basis, 90, 0);
+    const pitched = offsetZenithCameraBasis(basis, 0, 90);
+
+    closeVector(yawed.forward, [1, 0, 0]);
+    closeVector(yawed.up, [0, 1, 0]);
+    closeVector(pitched.forward, [0, 1, 0]);
+    closeVector(pitched.up, [0, 0, -1]);
   });
 
   test("suppresses sub-degree jitter without freezing intentional motion", () => {
@@ -121,3 +161,7 @@ describe("device orientation quaternion pipeline", () => {
     expect(tracker.advance(16)).toEqual(identityDeviceOrientation());
   });
 });
+
+function dot(left: readonly number[], right: readonly number[]): number {
+  return left.reduce((sum, value, index) => sum + value * right[index]!, 0);
+}

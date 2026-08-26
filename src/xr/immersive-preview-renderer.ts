@@ -1,7 +1,12 @@
 import type { AudienceInSpace, ImageSpatialSpec } from "../domain/schema.js";
 import { audienceVenuePlan } from "../geometry/audience-in-space.js";
 import { clamp, normalize, type Vec3 } from "../projection.js";
-import { StabilizedDeviceOrientation, zenithForwardFromRelativeDeviceOrientation } from "./device-orientation.js";
+import {
+  offsetZenithCameraBasis,
+  screenOrientationCompensationDegrees,
+  StabilizedDeviceOrientation,
+  zenithCameraBasisFromRelativeDeviceOrientation,
+} from "./device-orientation.js";
 import { buildImmersiveCarrierMesh, immersiveArPlacement, immersiveVrModelMatrix } from "./spatial-preview-mesh.js";
 
 export type ImmersivePreviewMode = "lookaround" | "immersive-vr" | "immersive-ar";
@@ -94,11 +99,12 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
       alpha: event.alpha,
       beta: event.beta,
       gamma: event.gamma,
+      screenAngleDegrees: screenOrientationAngleDegrees(),
     });
     if (firstReading) {
       receivedOrientation = true;
       input.onUpdate({
-        status: `${input.label} · stabilized relative orientation active; drag also works.`,
+        status: `${input.label} · stabilized full-sphere orientation active; drag also works.`,
         sensorActive: true,
       });
     }
@@ -151,20 +157,24 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
     if (ended) return;
     const deltaMs = lastFrameTime === null ? 1000 / 60 : time - lastFrameTime;
     lastFrameTime = time;
-    const sensorForward = zenithForwardFromRelativeDeviceOrientation(sensorOrientation.advance(deltaMs));
-    const sensorYawDegrees = Math.atan2(sensorForward[0], sensorForward[2]) * (180 / Math.PI);
-    const sensorPitchDegrees = Math.asin(clamp(sensorForward[1], -1, 1)) * (180 / Math.PI);
-    const yawDegrees = input.audience.yawDegrees + sensorYawDegrees + dragYaw;
-    const pitchDegrees = clamp(input.audience.pitchDegrees + sensorPitchDegrees + dragPitch, -88, 88);
-    const forward = forwardFromEuler(yawDegrees, pitchDegrees);
-    const target: Vec3 = [eye[0] + forward[0], eye[1] + forward[1], eye[2] + forward[2]];
+    const sensorBasis = zenithCameraBasisFromRelativeDeviceOrientation(sensorOrientation.advance(deltaMs));
+    const cameraBasis = offsetZenithCameraBasis(
+      sensorBasis,
+      input.audience.yawDegrees + dragYaw,
+      input.audience.pitchDegrees + dragPitch,
+    );
+    const target: Vec3 = [
+      eye[0] + cameraBasis.forward[0],
+      eye[1] + cameraBasis.forward[1],
+      eye[2] + cameraBasis.forward[2],
+    ];
     const projection = perspectiveMatrix(
       input.audience.fovDegrees,
       input.canvas.width / Math.max(input.canvas.height, 1),
       0.02,
       Math.max(200, input.audience.domeRadiusMeters * 4),
     );
-    const view = lookAtMatrix(eye, target, [0, 1, 0]);
+    const view = lookAtMatrix(eye, target, cameraBasis.up);
     renderer.draw(projection, view, identityMatrix(), {
       x: 0,
       y: 0,
@@ -521,11 +531,9 @@ function resizeCanvas(canvas: HTMLCanvasElement): void {
   if (canvas.height !== height) canvas.height = height;
 }
 
-function forwardFromEuler(yawDegrees: number, pitchDegrees: number): Vec3 {
-  const yaw = (yawDegrees * Math.PI) / 180;
-  const pitch = (pitchDegrees * Math.PI) / 180;
-  const cosPitch = Math.cos(pitch);
-  return normalize([Math.sin(yaw) * cosPitch, Math.sin(pitch), Math.cos(yaw) * cosPitch]);
+function screenOrientationAngleDegrees(): number {
+  const legacyAngle = (window as Window & { readonly orientation?: number }).orientation;
+  return screenOrientationCompensationDegrees(screen.orientation?.angle, legacyAngle);
 }
 
 function identityMatrix(): Float32Array {

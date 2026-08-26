@@ -1866,6 +1866,223 @@ input[type="range"] {
   color: var(--green);
 }
 
+.site-access-button {
+  gap: 6px;
+}
+
+.site-state {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 8px rgba(229, 163, 87, 0.45);
+}
+
+.site-state.is-ready {
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(102, 209, 169, 0.5);
+}
+
+.site-project-backdrop {
+  z-index: 120;
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgba(3, 5, 6, 0.74);
+  backdrop-filter: blur(5px);
+}
+
+.site-project-dialog {
+  width: min(620px, calc(100vw - 28px));
+  border: 1px solid #415058;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #161d20, #0d1113 68%);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.66);
+  color: var(--text);
+}
+
+.site-project-dialog > header,
+.site-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.site-project-dialog > header {
+  padding: 16px;
+  border-bottom: 1px solid #303a3f;
+}
+
+.site-project-dialog > header span {
+  color: var(--cyan);
+  font:
+    700 8px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.12em;
+}
+
+.site-project-dialog h2 {
+  margin: 3px 0 0;
+  font-size: 17px;
+}
+
+.site-account-row {
+  margin: 14px 16px 0;
+  padding: 11px;
+  border: 1px solid #303a3f;
+  background: #101518;
+}
+
+.site-account-row > div {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+
+.site-account-row small,
+.site-project-dialog > footer {
+  color: var(--muted);
+  font:
+    500 8px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+
+.site-account-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid #4b6c73;
+  color: var(--cyan);
+  font-weight: 800;
+}
+
+.site-current-project {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 12px 16px 0;
+  padding: 12px;
+  border: 1px solid #3d555c;
+  background: linear-gradient(90deg, rgba(69, 151, 165, 0.11), rgba(15, 20, 23, 0.55));
+}
+
+.site-current-project > div,
+.site-project-row > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.site-current-project span,
+.site-project-list-heading > span {
+  color: var(--cyan);
+  font:
+    700 7px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.11em;
+}
+
+.site-current-project small,
+.site-project-row small {
+  overflow: hidden;
+  color: var(--muted);
+  font:
+    500 8px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.site-project-list {
+  margin: 12px 16px 16px;
+  border: 1px solid #303a3f;
+  background: #0c1012;
+}
+
+.site-project-list-heading,
+.site-project-row,
+.site-project-row > div:last-child {
+  display: flex;
+  align-items: center;
+}
+
+.site-project-list-heading {
+  min-height: 34px;
+  justify-content: space-between;
+  padding: 0 9px 0 12px;
+  border-bottom: 1px solid #303a3f;
+  background: #12181b;
+}
+
+.site-project-row {
+  min-height: 54px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px 9px 12px;
+  border-bottom: 1px solid #252d31;
+}
+
+.site-project-row:last-child {
+  border-bottom: 0;
+}
+
+.site-project-row.is-current {
+  box-shadow: inset 2px 0 var(--cyan);
+  background: rgba(79, 171, 187, 0.07);
+}
+
+.site-project-row > div:last-child {
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.button.danger {
+  color: #ec9d98;
+}
+
+.site-project-empty {
+  display: grid;
+  justify-items: start;
+  gap: 9px;
+  margin: 14px 16px;
+  padding: 22px;
+  border: 1px dashed #39454a;
+  background: rgba(7, 10, 12, 0.45);
+}
+
+.site-project-empty p {
+  max-width: 440px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.site-project-empty.compact {
+  margin: 0;
+  border: 0;
+  padding: 18px 12px;
+}
+
+.site-project-dialog > footer {
+  min-height: 30px;
+  padding: 9px 16px;
+  border-top: 1px solid #293237;
+}
+
 .immersive-mode-grid {
   display: grid;
   grid-template-columns: 1fr;

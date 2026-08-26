@@ -6,6 +6,7 @@ import { addComposition, chooseComposition, chooseRoom, removeComposition } from
 import { loadProjectArchive, saveProjectArchive } from "../runtime/project-persistence.js";
 import type { Workspace } from "../domain/schema.js";
 import { useEffectRunner, useRuntime, useWorkbenchSnapshot } from "./runtime-bridge.js";
+import { CloudProjectControl } from "./cloud-project-control.js";
 
 const ComposeRoom = lazy(() => import("./rooms/compose-room.js").then((module) => ({ default: module.ComposeRoom })));
 const GenerateRoom = lazy(() =>
@@ -113,6 +114,7 @@ export function WorkbenchApp() {
           <span className={snapshot.environment.webgpu ? "engine-state is-ready" : "engine-state"}>
             <i aria-hidden="true" /> {snapshot.environment.webgpu ? "WEBGPU" : "CPU / NO GPU"}
           </span>
+          <CloudProjectControl />
           <button className="button ghost" type="button" disabled={busy} onClick={() => fileInput.current?.click()}>
             Open
           </button>

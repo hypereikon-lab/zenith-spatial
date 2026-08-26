@@ -5,3 +5,5 @@ dist/
 .zenith-runtime/
 .env
 .env.local
+.dev.vars*
+.wrangler/

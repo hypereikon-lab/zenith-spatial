@@ -6,6 +6,7 @@ import { MediaRepository } from "./media-repository.js";
 import { GenerationClient } from "./generation-client.js";
 import { WorkbenchService } from "./workbench-service.js";
 import { ImmersivePreview } from "../xr/immersive-preview-service.js";
+import { CloudProjectRepository } from "./cloud-project-repository.js";
 
 const WorkbenchLive = WorkbenchService.Live.pipe(Layer.provide(IdGenerator.Live));
 
@@ -13,6 +14,7 @@ const BrowserInfrastructure = Layer.mergeAll(
   BrowserHttpClient.layerXMLHttpRequest,
   IdGenerator.Live,
   MediaRepository.Live,
+  CloudProjectRepository.Live,
   ImmersivePreview.Live,
   WorkbenchLive,
 );

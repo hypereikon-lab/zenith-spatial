@@ -5,21 +5,28 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server/dev.ts",
+    "dev:site": "vite dev --mode site --host 127.0.0.1",
     "dev:client": "vite dev --host 127.0.0.1",
     "dev:server": "tsx --env-file-if-exists=.env.local server/main.ts",
     "build": "vite build",
+    "build:site": "vite build --mode site && node scripts/prepare-site-build.mjs",
     "preview": "vite preview --host 127.0.0.1",
+    "preview:site": "vite preview --mode site --host 127.0.0.1",
     "start": "tsx --env-file-if-exists=.env.local server/main.ts",
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck:engine": "tsc -p tsconfig.engine.json --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit && npm run typecheck:engine"
+    "typecheck:site": "tsc -p tsconfig.site.json --noEmit",
+    "typecheck": "tsc --noEmit && npm run typecheck:engine && npm run typecheck:site"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.54.0",
+    "@cloudflare/workers-types": "^5.20260826.1",
     "@eslint/js": "^10.0.1",
     "@fontsource-variable/inter": "^5.2.8",
+    "@openai/sites-vite-plugin": "^0.2.0",
     "@types/node": "^25.6.2",
     "@types/react": "19.2.11",
     "@types/react-dom": "19.2.3",
@@ -34,7 +41,8 @@
     "typescript-eslint": "^8.59.4",
     "unplugin-typegpu": "0.11.6",
     "vite": "^8.0.11",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.5",
+    "wrangler": "^4.126.0"
   },
   "dependencies": {
     "@effect/platform": "0.97.1",

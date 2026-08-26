@@ -33,6 +33,7 @@ import {
 } from "../../lib/shared/contracts/projection-authoring.js";
 import { SOURCE_PROJECTION_MODES, type SourceProjectionMode } from "../../lib/shared/contracts/projection-profile.js";
 import { downloadBlob } from "../../media/canvas-utils.js";
+import { imageFilesFromClipboard } from "../../media/browser-image-files.js";
 import { embedZenithPlateMetadataInPngBlob } from "../../media/png-zenith-provenance.js";
 import { arrangePlateSketchDefaults, defaultPlateSketchPlacement } from "../../plates/plate-sketch-arrangement.js";
 import {
@@ -152,6 +153,19 @@ export function ComposeRoom() {
       void run(workbench.notice("error", message, scope)).catch(() => undefined);
     },
     [run, workbench],
+  );
+
+  const importFiles = useCallback(
+    async (files: ReadonlyArray<File>) => {
+      setStatus(`Importing ${files.length} image source${files.length === 1 ? "" : "s"}…`);
+      try {
+        const imported = await run(importPlateSources(files));
+        setStatus(`${imported.length} source layer${imported.length === 1 ? "" : "s"} added.`);
+      } catch (error) {
+        reportError(error, "source-import");
+      }
+    },
+    [reportError, run],
   );
 
   useEffect(() => {
@@ -339,6 +353,18 @@ export function ComposeRoom() {
     window.addEventListener("keydown", deleteSelected);
     return () => window.removeEventListener("keydown", deleteSelected);
   }, [activeIndex, reportError, run, visibleLayers]);
+
+  useEffect(() => {
+    const pasteImages = (event: ClipboardEvent) => {
+      if (!event.clipboardData || isEditingTarget(event.target)) return;
+      const files = imageFilesFromClipboard(event.clipboardData);
+      if (files.length === 0) return;
+      event.preventDefault();
+      void importFiles(files);
+    };
+    window.addEventListener("paste", pasteImages);
+    return () => window.removeEventListener("paste", pasteImages);
+  }, [importFiles]);
 
   function currentAdapter() {
     return createPlateEditorProjectionAdapter({
@@ -673,16 +699,6 @@ export function ComposeRoom() {
     void run(replacePlateDraft(current)).catch((error: unknown) => reportError(error, "plate-draft"));
   }
 
-  async function importFiles(files: ReadonlyArray<File>) {
-    setStatus(`Importing ${files.length} image source${files.length === 1 ? "" : "s"}…`);
-    try {
-      const imported = await run(importPlateSources(files));
-      setStatus(`${imported.length} source layer${imported.length === 1 ? "" : "s"} added.`);
-    } catch (error) {
-      reportError(error, "source-import");
-    }
-  }
-
   async function commitCurrentPlate() {
     if (!session || !previewInput) return;
     setCommitting(true);
@@ -819,6 +835,7 @@ export function ComposeRoom() {
           >
             Remove selected
           </button>
+          <p className="technical-note">Drop images on the canvas or paste image pixels from the clipboard.</p>
         </div>
 
         <div className="panel-section">

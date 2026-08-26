@@ -7,7 +7,9 @@ Zenith is a local spatial-image authoring instrument for fulldome and other imme
 3. **Generate** from that exact commit, with explicit paid confirmation when Runway is configured, or import an Image Take locally.
 4. **Review** a Plate Commit or Image Take as exact pixels or through its pinned spatial geometry.
 
-**Add media** is the direct path around that Plate workflow: it imports an image as standalone Review media, opens its exact pixels immediately, and leaves Plate layers, commits, and generation state untouched. The imported bytes remain part of local and cloud `.zenith` saves and may still be inspected through the current carrier when a spatial preview is useful.
+**Add media** is the direct path around that Plate workflow: choose images from the header or Review rail, or drop completed fulldome images directly on the Review viewport. Each image opens as standalone Review media with exact pixels first and leaves Plate layers, commits, and generation state untouched. Switch to Spatial projection, Audience in Space, or Immersive Preview when carrier inspection is useful. The imported bytes remain part of local and cloud `.zenith` saves.
+
+Compose accepts one or more Plate sources through its picker or by dropping them on the Dome Canvas. An image copied from another application can also be pasted while Compose is active; it becomes a normal editable Plate layer with the same placement, save, and provenance contracts as a file import.
 
 Every new browser workspace also includes **Demo · Forest Domemaster 180°**, the exact 1920 × 1920 equidistant domemaster under `public/demo-media`. It is selected as standalone media but does not enter the Plate Draft. Open Review to inspect it immediately as pixels or a dome, then use Immersive Preview for Phone Lookaround or compatible WebXR without generating or importing first. The public `/?demo=vr` link opens that same media in a focused mobile launcher without navigating through the Workbench.
 

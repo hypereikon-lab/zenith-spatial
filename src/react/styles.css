@@ -1048,6 +1048,34 @@ input[type="checkbox"] {
   content: "";
 }
 
+.viewport-stage.is-drop-target::after {
+  position: absolute;
+  z-index: 12;
+  inset: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--cyan);
+  background: rgba(12, 33, 38, 0.9);
+  color: var(--cyan);
+  content: "DROP IMAGE FILES";
+  font:
+    700 11px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  letter-spacing: 0.12em;
+  pointer-events: none;
+}
+
+.review-media-intake {
+  border-bottom: 1px solid var(--line);
+}
+
+.review-media-intake .technical-note,
+.panel-actions > .technical-note {
+  margin: 0;
+}
+
 .canvas-stack {
   position: relative;
   width: calc(100% - 48px);

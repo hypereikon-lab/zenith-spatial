@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { selectedComposition, selectedImageTake, selectedPlateCommit } from "../../domain/project.js";
 import type { ImageTake, PlateCommit } from "../../domain/schema.js";
@@ -27,6 +27,8 @@ import {
   type PlateEditorViewMode,
 } from "../../plates/plate-editor-view.js";
 import { sourceProjectionLabel } from "../../geometry/source-projection.js";
+import { imageFilesFromList } from "../../media/browser-image-files.js";
+import { importReviewMedia } from "../../runtime/browser-workbench-commands.js";
 import { chooseImageTake, choosePlateCommit, updateWorkspace } from "../../runtime/workspace-commands.js";
 import { useEffectRunner, useWorkbenchSnapshot } from "../runtime-bridge.js";
 import { useMediaUrl } from "../use-media-url.js";
@@ -57,7 +59,10 @@ export function ReviewRoom() {
   const [session, setSession] = useState<SourceMapPreviewSession | null>(null);
   const [size, setSize] = useState({ width: 960, height: 720 });
   const [status, setStatus] = useState("Select a Plate Commit or Image Take.");
+  const [dropActive, setDropActive] = useState(false);
+  const [importing, setImporting] = useState(false);
   const stage = useRef<HTMLDivElement>(null);
+  const mediaInput = useRef<HTMLInputElement>(null);
   const cameraDrag = useRef<ProjectionCameraDragState | null>(null);
   const renderSerial = useRef(0);
 
@@ -111,6 +116,27 @@ export function ReviewRoom() {
         ? audienceCameraForProjection(audience, spec.projectionMode, spec.surface)
         : (snapshot.document.workspace.camera as PlateEditorCamera),
     [audience, snapshot.document.workspace.camera, spec, viewMode],
+  );
+
+  const importPreviewFiles = useCallback(
+    async (files: ArrayLike<File>) => {
+      const images = imageFilesFromList(files);
+      if (images.length === 0) {
+        setStatus("Drop or choose one or more image files.");
+        return;
+      }
+      setImporting(true);
+      setStatus(`Adding ${images.length} image${images.length === 1 ? "" : "s"} to Review…`);
+      try {
+        for (const image of images) await run(importReviewMedia(image));
+        setStatus(`${images.length} preview image${images.length === 1 ? "" : "s"} added without changing the Plate.`);
+      } catch (error) {
+        setStatus(readableError(error));
+      } finally {
+        setImporting(false);
+      }
+    },
+    [run],
   );
 
   useEffect(() => {
@@ -270,6 +296,28 @@ export function ReviewRoom() {
           </div>
           <strong>{composition.plateCommits.length + composition.imageTakes.length}</strong>
         </header>
+        <div className="panel-actions stacked review-media-intake">
+          <button
+            className="button full"
+            type="button"
+            disabled={importing}
+            onClick={() => mediaInput.current?.click()}
+          >
+            Add preview media
+          </button>
+          <input
+            ref={mediaInput}
+            className="visually-hidden"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={(event) => {
+              void importPreviewFiles(event.currentTarget.files ?? []);
+              event.currentTarget.value = "";
+            }}
+          />
+          <p className="technical-note">Drop completed fulldome images directly on the preview.</p>
+        </div>
         <div className="panel-section flush">
           <h3>Media &amp; Image Takes</h3>
           <div className="revision-list">
@@ -381,7 +429,27 @@ export function ReviewRoom() {
             {spec ? sourceProjectionLabel(spec.projectionMode) : "—"}
           </span>
         </div>
-        <div ref={stage} className={displayMode === "pixels" ? "viewport-stage pixel-inspection" : "viewport-stage"}>
+        <div
+          ref={stage}
+          className={`${displayMode === "pixels" ? "viewport-stage pixel-inspection" : "viewport-stage"}${dropActive ? " is-drop-target" : ""}`}
+          onDragEnter={(event) => {
+            if (event.dataTransfer.types.includes("Files")) {
+              event.preventDefault();
+              setDropActive(true);
+            }
+          }}
+          onDragOver={(event) => {
+            if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDropActive(false);
+            void importPreviewFiles(event.dataTransfer.files);
+          }}
+        >
           {displayMode === "spatial" ? (
             <>
               <canvas
@@ -628,4 +696,11 @@ function viewLabel(mode: PlateEditorViewMode): string {
   if (mode === "dome-pov") return "Audience POV";
   if (mode === "audience-space") return "Audience in Space";
   return "Volume Room";
+}
+
+function readableError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error && typeof error.message === "string")
+    return error.message;
+  return "Preview media could not be imported.";
 }

@@ -79,7 +79,7 @@ canvas:focus-visible {
 .app-header {
   z-index: 5;
   display: grid;
-  grid-template-columns: 250px minmax(520px, 1fr) 280px;
+  grid-template-columns: 230px minmax(500px, 1fr) 350px;
   align-items: stretch;
   border-bottom: 1px solid var(--line-strong);
   background: #101215;
@@ -2385,7 +2385,7 @@ input[type="range"] {
   }
 
   .app-header {
-    grid-template-columns: 205px minmax(500px, 1fr) 250px;
+    grid-template-columns: 205px minmax(500px, 1fr) 330px;
   }
 
   .brand-lockup {

@@ -341,7 +341,7 @@ export function GenerateRoom() {
           ))}
 
           <div className="panel-section">
-            <h3>Image Takes</h3>
+            <h3>Media &amp; Image Takes</h3>
             <div className="take-list">
               {[...composition.imageTakes].reverse().map((take) => (
                 <button
@@ -350,10 +350,14 @@ export function GenerateRoom() {
                   className={take.id === composition.selectedImageTakeId ? "take-row is-selected" : "take-row"}
                   onClick={() => void run(chooseImageTake(take.id)).then(() => run(chooseRoom("review")))}
                 >
-                  <span>{take.kind === "generated" ? "GEN" : "IMP"}</span>
+                  <span>{take.kind === "generated" ? "GEN" : take.plateCommitId === null ? "MED" : "IMP"}</span>
                   <strong>{take.label}</strong>
                   <small>
-                    {take.plateCommitId === composition.selectedPlateCommitId ? "current commit" : "earlier commit"}
+                    {take.plateCommitId === null
+                      ? "standalone media"
+                      : take.plateCommitId === composition.selectedPlateCommitId
+                        ? "current commit"
+                        : "earlier commit"}
                   </small>
                 </button>
               ))}

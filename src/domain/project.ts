@@ -36,6 +36,7 @@ export type CompositionReadiness = {
   readonly missingPlateCommit: boolean;
   readonly plateDirty: boolean;
   readonly missingImageTake: boolean;
+  readonly standaloneMediaSelected: boolean;
   readonly imageTakeStale: boolean;
   readonly canCommit: boolean;
   readonly canGenerate: boolean;
@@ -206,12 +207,14 @@ export function compositionReadiness(composition: Composition): CompositionReadi
   const plateDirty = Boolean(
     commit && commit.provenance.draftFingerprint !== plateDraftFingerprint(composition.plateDraft),
   );
-  const imageTakeStale = Boolean(take && commit && take.plateCommitId !== commit.id);
+  const standaloneMediaSelected = Boolean(take?.kind === "imported" && take.plateCommitId === null);
+  const imageTakeStale = Boolean(take?.plateCommitId && commit && take.plateCommitId !== commit.id);
   return {
     sourceCount: composition.sourceAssetIds.length,
     missingPlateCommit: !commit,
     plateDirty,
     missingImageTake: !take,
+    standaloneMediaSelected,
     imageTakeStale,
     canCommit: composition.sourceAssetIds.length > 0 && composition.plateDraft.frame.plateLayers.length > 0,
     canGenerate: Boolean(commit && !plateDirty),

@@ -50,7 +50,6 @@ export function ReviewRoom() {
       ? `commit:${selectedCommit.id}`
       : "none";
   const [targetKey, setTargetKey] = useState(defaultTargetKey);
-  const [displayMode, setDisplayMode] = useState<"spatial" | "pixels">("spatial");
   const [pixelZoom, setPixelZoom] = useState(50);
   const [showCarrierMask, setShowCarrierMask] = useState(false);
   const [invertCarrierMask, setInvertCarrierMask] = useState(false);
@@ -81,6 +80,18 @@ export function ReviewRoom() {
         : null;
   }, [composition.imageTakes, composition.plateCommits, selectedCommit, selectedTake, targetKey]);
   const asset = target ? snapshot.document.project.assets[target.value.mediaAssetId] : null;
+  const standaloneMedia = target?.kind === "take" && isStandaloneReviewMedia(target.value);
+  const [displayModePreference, setDisplayModePreference] = useState<{
+    readonly targetKey: string;
+    readonly mode: "spatial" | "pixels";
+  } | null>(null);
+  const displayMode =
+    displayModePreference?.targetKey === targetKey
+      ? displayModePreference.mode
+      : standaloneMedia
+        ? "pixels"
+        : "spatial";
+  const setDisplayMode = (mode: "spatial" | "pixels") => setDisplayModePreference({ targetKey, mode });
   const mediaUrl = useMediaUrl(asset);
   const spec = target?.value.spatialSpec ?? null;
   const viewMode: PlateEditorViewMode =
@@ -244,8 +255,9 @@ export function ReviewRoom() {
 
   function selectTarget(next: ReviewTarget) {
     setTargetKey(`${next.kind}:${next.value.id}`);
-    if (next.kind === "take") void run(chooseImageTake(next.value.id));
-    else void run(choosePlateCommit(next.value.id));
+    if (next.kind === "take") {
+      void run(chooseImageTake(next.value.id));
+    } else void run(choosePlateCommit(next.value.id));
   }
 
   return (
@@ -259,7 +271,7 @@ export function ReviewRoom() {
           <strong>{composition.plateCommits.length + composition.imageTakes.length}</strong>
         </header>
         <div className="panel-section flush">
-          <h3>Image Takes</h3>
+          <h3>Media &amp; Image Takes</h3>
           <div className="revision-list">
             {[...composition.imageTakes].reverse().map((take) => (
               <button
@@ -270,7 +282,7 @@ export function ReviewRoom() {
                 }
                 onClick={() => selectTarget({ kind: "take", value: take })}
               >
-                <span>{take.kind === "generated" ? "GEN" : "IMP"}</span>
+                <span>{take.kind === "generated" ? "GEN" : isStandaloneReviewMedia(take) ? "MED" : "IMP"}</span>
                 <strong>{take.label}</strong>
                 <small>
                   {take.spatialSpec.targetWidth} × {take.spatialSpec.targetHeight}
@@ -431,7 +443,7 @@ export function ReviewRoom() {
           ) : (
             <div className="empty-viewport">
               <strong>No review media</strong>
-              <span>Commit a Plate Draft or import an Image Take.</span>
+              <span>Use Add media for direct viewing, or commit a Plate Draft.</span>
             </div>
           )}
         </div>
@@ -458,9 +470,9 @@ export function ReviewRoom() {
         <header className="panel-heading">
           <div>
             <span className="eyebrow">Spatial spec</span>
-            <h2>{target?.kind === "take" ? "Image Take" : "Plate Commit"}</h2>
+            <h2>{standaloneMedia ? "Media" : target?.kind === "take" ? "Image Take" : "Plate Commit"}</h2>
           </div>
-          <strong>{target?.kind === "take" ? "IMG" : "PLT"}</strong>
+          <strong>{standaloneMedia ? "MED" : target?.kind === "take" ? "IMG" : "PLT"}</strong>
         </header>
         <div className="inspector-scroll">
           {displayMode === "pixels" ? (
@@ -589,7 +601,7 @@ export function ReviewRoom() {
                 {target.kind === "take" ? (
                   <div>
                     <dt>Plate Commit</dt>
-                    <dd>{target.value.plateCommitId ?? "Imported without commit"}</dd>
+                    <dd>{target.value.plateCommitId ?? "None — standalone media"}</dd>
                   </div>
                 ) : (
                   <div>
@@ -604,6 +616,10 @@ export function ReviewRoom() {
       </aside>
     </section>
   );
+}
+
+function isStandaloneReviewMedia(take: ImageTake | null | undefined): boolean {
+  return take?.kind === "imported" && take.plateCommitId === null && !take.provenance;
 }
 
 function viewLabel(mode: PlateEditorViewMode): string {

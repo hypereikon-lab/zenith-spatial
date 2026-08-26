@@ -459,6 +459,15 @@ export function importPlateCommit(file: File) {
 }
 
 export function importImageTake(file: File) {
+  return importReviewImage(file, "image-take");
+}
+
+/** Adds an image directly to Review without turning it into a Plate or pinning it to a Plate Commit. */
+export function importReviewMedia(file: File) {
+  return importReviewImage(file, "standalone-media");
+}
+
+function importReviewImage(file: File, importMode: "image-take" | "standalone-media") {
   return Effect.gen(function* () {
     if (!file.type.startsWith("image/")) {
       return yield* Effect.fail(
@@ -475,13 +484,15 @@ export function importImageTake(file: File) {
     }).pipe(Effect.catchAll(() => Effect.succeed(null)));
     const now = new Date(yield* Clock.currentTimeMillis).toISOString();
     const composition = selectedComposition(workbench.getSnapshot().document);
-    const provenance =
+    const matchingProvenance =
       embeddedProvenance &&
       embeddedProvenance.projectId === workbench.getSnapshot().document.project.id &&
       embeddedProvenance.compositionId === composition.id &&
       composition.plateCommits.some((commit) => commit.id === embeddedProvenance.plateCommitId)
         ? embeddedProvenance
         : undefined;
+    const provenance = importMode === "image-take" ? matchingProvenance : undefined;
+    const standalone = importMode === "standalone-media";
     const mediaId = yield* ids.next("media");
     const takeId = yield* ids.next("image-take");
     const media: MediaAsset = {
@@ -492,21 +503,23 @@ export function importImageTake(file: File) {
       width: dimensions.width,
       height: dimensions.height,
       storageRef: `media:${mediaId}`,
-      alt: "Imported Image Take",
+      alt: standalone ? "Standalone review media" : "Imported Image Take",
       createdAt: now,
     };
     const take: ImageTake = {
       id: takeId,
-      label: `Imported Image Take ${composition.imageTakes.length + 1}`,
+      label: standalone
+        ? `Media ${composition.imageTakes.length + 1}`
+        : `Imported Image Take ${composition.imageTakes.length + 1}`,
       kind: "imported",
       createdAt: now,
       mediaAssetId: mediaId,
-      plateCommitId: provenance?.plateCommitId ?? composition.selectedPlateCommitId,
-      direction: composition.generationDirection,
+      plateCommitId: standalone ? null : (provenance?.plateCommitId ?? composition.selectedPlateCommitId),
+      direction: standalone ? "" : composition.generationDirection,
       strategy: composition.generationStrategy,
-      model: provenance?.model,
+      model: matchingProvenance?.model,
       spatialSpec: {
-        ...(provenance?.spatialSpec ?? defaultImageSpatialSpec(composition.plateDraft)),
+        ...(matchingProvenance?.spatialSpec ?? defaultImageSpatialSpec(composition.plateDraft)),
         sourceWidth: dimensions.width,
         sourceHeight: dimensions.height,
         sourceAspectRatio: dimensions.width / dimensions.height,

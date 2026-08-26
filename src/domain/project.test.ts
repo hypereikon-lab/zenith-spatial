@@ -11,6 +11,7 @@ import {
   defaultImageSpatialSpec,
   plateDraftFingerprint,
   replaceSelectedCompositionDraft,
+  reviewMediaAsset,
   selectedComposition,
   updateProjectionGeometry,
   validateZenithDocument,
@@ -95,6 +96,44 @@ describe("Zenith portable domain", () => {
       imageTakeStale: false,
       canReview: true,
     });
+  });
+
+  test("opens standalone media in Review without changing the Plate workflow", () => {
+    const initial = createInitialZenithDocument({ now: NOW });
+    const before = selectedComposition(initial);
+    const media = imageAsset("asset-standalone", "reference.png", 1600, 900);
+    const take: ImageTake = {
+      id: "take-standalone",
+      label: "Media 1",
+      kind: "imported",
+      createdAt: NOW,
+      mediaAssetId: media.id,
+      plateCommitId: null,
+      direction: "",
+      strategy: "integrated",
+      spatialSpec: {
+        ...defaultImageSpatialSpec(before.plateDraft),
+        sourceWidth: media.width,
+        sourceHeight: media.height,
+        sourceAspectRatio: media.width / media.height,
+      },
+    };
+
+    const changed = addImageTake(initial, media, take, NOW);
+    const composition = selectedComposition(changed);
+
+    expect(changed.workspace.room).toBe("review");
+    expect(composition.sourceAssetIds).toEqual(before.sourceAssetIds);
+    expect(composition.plateDraft).toEqual(before.plateDraft);
+    expect(compositionReadiness(composition)).toMatchObject({
+      missingPlateCommit: true,
+      missingImageTake: false,
+      standaloneMediaSelected: true,
+      imageTakeStale: false,
+      canGenerate: false,
+      canReview: true,
+    });
+    expect(reviewMediaAsset(changed)).toEqual(media);
   });
 
   test("duplicates, creates blank compositions and keeps at least one", () => {

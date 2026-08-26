@@ -2,6 +2,7 @@ import { lazy, Suspense, useRef, useState } from "react";
 
 import { compositionReadiness, selectedComposition } from "../domain/project.js";
 import { downloadBlob } from "../media/canvas-utils.js";
+import { importReviewMedia } from "../runtime/browser-workbench-commands.js";
 import { addComposition, chooseComposition, chooseRoom, removeComposition } from "../runtime/workspace-commands.js";
 import { loadProjectArchive, saveProjectArchive } from "../runtime/project-persistence.js";
 import type { Workspace } from "../domain/schema.js";
@@ -32,6 +33,7 @@ export function WorkbenchApp() {
   const composition = selectedComposition(snapshot.document);
   const readiness = compositionReadiness(composition);
   const fileInput = useRef<HTMLInputElement>(null);
+  const mediaInput = useRef<HTMLInputElement>(null);
   const [projectStatus, setProjectStatus] = useState("Local project · unsaved changes remain in this browser session");
   const [busy, setBusy] = useState(false);
 
@@ -67,6 +69,14 @@ export function WorkbenchApp() {
           : "Loaded Zenith project and restored its embedded media.",
       );
     }
+    setBusy(false);
+  }
+
+  async function addMedia(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    const imported = await execute(importReviewMedia(file), "media-import");
+    if (imported) setProjectStatus(`${imported.label} added directly to Review without changing the Plate.`);
     setBusy(false);
   }
 
@@ -115,6 +125,19 @@ export function WorkbenchApp() {
             <i aria-hidden="true" /> {snapshot.environment.webgpu ? "WEBGPU" : "CPU / NO GPU"}
           </span>
           <CloudProjectControl />
+          <button className="button" type="button" disabled={busy} onClick={() => mediaInput.current?.click()}>
+            Add media
+          </button>
+          <input
+            ref={mediaInput}
+            className="visually-hidden"
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              void addMedia(event.currentTarget.files?.[0]);
+              event.currentTarget.value = "";
+            }}
+          />
           <button className="button ghost" type="button" disabled={busy} onClick={() => fileInput.current?.click()}>
             Open
           </button>
@@ -172,10 +195,12 @@ export function WorkbenchApp() {
           </span>
           <span className={readiness.missingImageTake ? "muted" : readiness.imageTakeStale ? "warning" : "ready"}>
             {readiness.missingImageTake
-              ? "NO IMAGE TAKE"
-              : readiness.imageTakeStale
-                ? "TAKE FROM EARLIER COMMIT"
-                : "TAKE CURRENT"}
+              ? "NO MEDIA"
+              : readiness.standaloneMediaSelected
+                ? "MEDIA READY"
+                : readiness.imageTakeStale
+                  ? "TAKE FROM EARLIER COMMIT"
+                  : "TAKE CURRENT"}
           </span>
         </div>
       </div>

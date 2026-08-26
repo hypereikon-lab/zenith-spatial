@@ -7,6 +7,8 @@ Zenith is a local spatial-image authoring instrument for fulldome and other imme
 3. **Generate** from that exact commit, with explicit paid confirmation when Runway is configured, or import an Image Take locally.
 4. **Review** a Plate Commit or Image Take as exact pixels or through its pinned spatial geometry.
 
+**Add media** is the direct path around that Plate workflow: it imports an image as standalone Review media, opens its exact pixels immediately, and leaves Plate layers, commits, and generation state untouched. The imported bytes remain part of local and cloud `.zenith` saves and may still be inspected through the current carrier when a spatial preview is useful.
+
 The **physical horizon** is derived rather than freely authored: angular carriers use observer level at `0°`; CAVE, measured hall, and cylinder carriers use the projection observer's eye height above the venue floor. Compose keeps that guide visible and edits the measured observer height directly. A non-zero deviation is available only as an explicit advanced installation calibration. **Align image horizon** is a separate Plate-map control that changes where image pixels are allocated around the physical guide and compensates Plate placement through physical space.
 
 Compose and Review include an **Audience in Space** view: a perspective POV from a movable person whose X/Z position, eye height, facing, and field of view are expressed in meters. Measured rooms use their authored dimensions; angular carriers receive a workspace-only physical dome radius. Audience movement is inspection state and never changes Plate placement or projection mapping.
@@ -43,7 +45,7 @@ See [projection carriers](docs/projection-carriers.md) for the carrier and rende
 
 ## Domain and persistence
 
-A Composition owns ordered source assets, one editable Plate Draft, immutable Plate Commits, Image Takes, and its current selections. Readiness, dirty, and stale states are derived from commit fingerprints and parent relationships; they are not persisted flags. Portable assets store descriptors and stable storage references only—never `Blob`, `File`, canvas, or object URLs.
+A Composition owns ordered source assets, one editable Plate Draft, immutable Plate Commits, standalone Review media, Image Takes, and its current selections. Readiness, dirty, and stale states are derived from commit fingerprints and parent relationships; they are not persisted flags. Portable assets store descriptors and stable storage references only—never `Blob`, `File`, canvas, or object URLs.
 
 Project files are binary `.zenith` archives containing the schema-validated document plus exact media sidecars. Loading replaces runtime media atomically and restores the workspace. The loader also includes a one-way importer for the former schema-version 17 JSON/archive format; new saves always use the current domain.
 
@@ -100,7 +102,7 @@ npm run build
 
 ## Private ChatGPT Site
 
-The Site is a second delivery mode for the same Vite/React workstation, not a fork of the product. It keeps Compose, exact Plate Commit/download, imported Image Takes, spatial Review, Audience in Space, Phone Lookaround, and capability-detected WebXR. After ChatGPT sign-in, **Site** in the header can save, load, revision, and delete private projects. Each remote revision is the normal binary `.zenith` archive, so media bytes and multi-composition integrity are identical to local Save/Open.
+The Site is a second delivery mode for the same Vite/React workstation, not a fork of the product. It keeps Compose, direct Add media review, exact Plate Commit/download, imported Image Takes, spatial Review, Audience in Space, Phone Lookaround, and capability-detected WebXR. After ChatGPT sign-in, **Site** in the header can save, load, revision, and delete private projects. Each remote revision is the normal binary `.zenith` archive, so media bytes and multi-composition integrity are identical to local Save/Open.
 
 ```sh
 npm ci

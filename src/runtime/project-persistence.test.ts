@@ -21,6 +21,7 @@ describe("project persistence", () => {
   test("roundtrips the current domain and restores exact runtime media bytes", async () => {
     const plateAsset = imageAsset("media-plate", "plate-commit.png");
     const takeAsset = imageAsset("media-take", "image-take.png");
+    const standaloneAsset = imageAsset("media-standalone", "standalone.png");
     let document = createInitialZenithDocument({ now: NOW, projectId: "project-roundtrip" });
     const composition = selectedComposition(document);
     const draft = structuredClone(composition.plateDraft);
@@ -57,6 +58,22 @@ describe("project persistence", () => {
       spatialSpec: commit.spatialSpec,
     };
     document = addImageTake(document, takeAsset, take, NOW);
+    document = addImageTake(
+      document,
+      standaloneAsset,
+      {
+        id: "take-standalone",
+        label: "Media 2",
+        kind: "imported",
+        createdAt: NOW,
+        mediaAssetId: standaloneAsset.id,
+        plateCommitId: null,
+        direction: "",
+        strategy: "integrated",
+        spatialSpec,
+      },
+      NOW,
+    );
 
     const layer = Layer.mergeAll(
       WorkbenchService.fromDocument(document),
@@ -73,21 +90,24 @@ describe("project persistence", () => {
           const workbench = yield* WorkbenchService;
           yield* media.put(plateAsset.id, { blob: new Blob(["PLATE-BYTES"], { type: "image/png" }) });
           yield* media.put(takeAsset.id, { blob: new Blob(["TAKE-BYTES"], { type: "image/png" }) });
+          yield* media.put(standaloneAsset.id, { blob: new Blob(["STANDALONE-BYTES"], { type: "image/png" }) });
 
           const archive = yield* saveProjectArchive;
           const contents = yield* Effect.promise(() => readProjectArchiveBlob(archive));
-          expect(contents?.media.size).toBe(2);
+          expect(contents?.media.size).toBe(3);
 
           yield* workbench.replaceDocument(createInitialZenithDocument({ now: NOW, projectId: "temporary" }));
           const loaded = yield* loadProjectArchive(archive);
 
           expect(loaded.migrated).toBe(false);
           expect(workbench.getSnapshot().document).toEqual(document);
-          expect(yield* media.ids).toEqual(expect.arrayContaining([plateAsset.id, takeAsset.id]));
+          expect(yield* media.ids).toEqual(expect.arrayContaining([plateAsset.id, takeAsset.id, standaloneAsset.id]));
           const restoredPlate = yield* media.readBlob(plateAsset);
           const restoredTake = yield* media.readBlob(takeAsset);
+          const restoredStandalone = yield* media.readBlob(standaloneAsset);
           expect(yield* Effect.promise(() => restoredPlate.text())).toBe("PLATE-BYTES");
           expect(yield* Effect.promise(() => restoredTake.text())).toBe("TAKE-BYTES");
+          expect(yield* Effect.promise(() => restoredStandalone.text())).toBe("STANDALONE-BYTES");
         }).pipe(Effect.provide(layer)),
       ),
     );

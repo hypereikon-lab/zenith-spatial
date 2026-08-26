@@ -2531,7 +2531,7 @@ input[type="range"] {
 }
 
 .immersive-overlay-state {
-  grid-template-columns: 8px minmax(0, 1fr) auto auto;
+  grid-template-columns: 8px minmax(0, 1fr) repeat(3, auto);
   align-items: center;
   color: #c4cacc;
   font-size: 9px;
@@ -2551,6 +2551,17 @@ input[type="range"] {
 .immersive-overlay-actions {
   display: flex;
   gap: 6px;
+}
+
+.immersive-dolly-actions {
+  display: flex;
+  gap: 3px;
+}
+
+.immersive-overlay-actions .immersive-dolly-button {
+  width: 34px;
+  padding: 0;
+  font-size: 16px;
 }
 
 @media (max-width: 680px) {

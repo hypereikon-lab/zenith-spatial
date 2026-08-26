@@ -14,7 +14,6 @@ export type DeviceOrientationAngles = {
   readonly alpha: number;
   readonly beta: number;
   readonly gamma: number;
-  readonly screenAngleDegrees?: number;
 };
 
 export type ZenithCameraBasis = {
@@ -57,7 +56,7 @@ export class StabilizedDeviceOrientation {
 
   ingest(angles: DeviceOrientationAngles): boolean {
     const firstReading = this.latest === null;
-    const current = screenAdjustedDeviceOrientation(angles);
+    const current = quaternionFromDeviceOrientation(angles);
     this.latest = current;
     this.baseline ??= current;
     this.target = relativeDeviceOrientation(this.baseline, current);
@@ -98,22 +97,6 @@ export function quaternionFromDeviceOrientation({ alpha, beta, gamma }: DeviceOr
     cosX * cosY * sinZ + sinX * sinY * cosZ,
     cosX * cosY * cosZ - sinX * sinY * sinZ,
   ]);
-}
-
-/** Aligns the W3C device frame with the visible screen in either portrait or landscape. */
-export function screenAdjustedDeviceOrientation(angles: DeviceOrientationAngles): Quaternion {
-  const device = quaternionFromDeviceOrientation(angles);
-  const screen = quaternionFromAxisAngle([0, 0, 1], (angles.screenAngleDegrees ?? 0) * DEG_TO_RAD);
-  return multiplyQuaternions(device, screen);
-}
-
-/** Normalizes the legacy clockwise Window angle to the modern counter-clockwise Screen angle. */
-export function screenOrientationCompensationDegrees(
-  modernAngle: number | null | undefined,
-  legacyAngle: number | null | undefined,
-): number {
-  if (typeof modernAngle === "number" && Number.isFinite(modernAngle)) return modernAngle;
-  return typeof legacyAngle === "number" && Number.isFinite(legacyAngle) ? -legacyAngle : 0;
 }
 
 /** Expresses the current device pose in the coordinate frame captured at recenter. */

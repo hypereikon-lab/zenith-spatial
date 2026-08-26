@@ -18,7 +18,7 @@ describe("immersive preview Effect service", () => {
       finish = resolve;
     });
     const end = vi.fn(async () => finish());
-    const controller: ImmersivePreviewController = { finished, end, recenter: vi.fn() };
+    const controller: ImmersivePreviewController = { finished, end, recenter: vi.fn(), move: vi.fn() };
     const start = vi.fn(async () => controller);
     const onReady = vi.fn();
     const service = makeImmersivePreviewService({ start });

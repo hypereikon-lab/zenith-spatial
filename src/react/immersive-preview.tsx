@@ -47,6 +47,7 @@ export function ImmersivePreviewPanel({
   const [activeMode, setActiveMode] = useState<ImmersivePreviewMode | null>(null);
   const [status, setStatus] = useState("Checking this device…");
   const [scaleLabel, setScaleLabel] = useState<string | null>(null);
+  const [positionLabel, setPositionLabel] = useState<string | null>(null);
   const [sensorActive, setSensorActive] = useState(false);
   const plan = useMemo(
     () => (spec ? audienceVenuePlan(audience, spec.projectionMode, spec.surface) : null),
@@ -100,6 +101,7 @@ export function ImmersivePreviewPanel({
     pendingEnd.current = false;
     setActiveMode(mode);
     setScaleLabel(null);
+    setPositionLabel(null);
     setSensorActive(false);
     setStatus(mode === "lookaround" ? "Opening spatial lookaround…" : `Entering ${modeLabel(mode)}…`);
     if (mode === "lookaround" && targetOverlay.requestFullscreen) {
@@ -130,6 +132,7 @@ export function ImmersivePreviewPanel({
             setStatus(update.status);
             setScaleLabel(update.scaleLabel ?? null);
             setSensorActive(update.sensorActive ?? false);
+            if (update.positionLabel !== undefined) setPositionLabel(update.positionLabel);
           },
         }),
       ),
@@ -147,6 +150,7 @@ export function ImmersivePreviewPanel({
         launchedContentKey.current = null;
         setActiveMode(null);
         setSensorActive(false);
+        setPositionLabel(null);
       });
   }
 
@@ -178,7 +182,7 @@ export function ImmersivePreviewPanel({
         <div className="immersive-mode-grid" aria-label="Immersive preview modes">
           <ImmersiveModeButton
             label="Phone Lookaround"
-            detail={capabilities.orientation ? "Sensor + touch" : "Touch view"}
+            detail={capabilities.orientation ? "Sensor + pinch" : "Touch + pinch"}
             available={!checking && !unavailableReason}
             active={activeMode === "lookaround"}
             onClick={() => launch("lookaround")}
@@ -235,8 +239,31 @@ export function ImmersivePreviewPanel({
             <span>{status}</span>
             {scaleLabel ? <strong>{scaleLabel}</strong> : null}
             {sensorActive ? <strong>SENSOR</strong> : null}
+            {positionLabel ? <strong>{positionLabel}</strong> : null}
           </div>
           <div className="immersive-overlay-actions">
+            {activeMode === "lookaround" ? (
+              <div className="immersive-dolly-actions" role="group" aria-label="Spatial movement">
+                <button
+                  className="button ghost immersive-dolly-button"
+                  type="button"
+                  aria-label="Move backward"
+                  title="Move backward"
+                  onClick={() => controller.current?.move("backward")}
+                >
+                  −
+                </button>
+                <button
+                  className="button ghost immersive-dolly-button"
+                  type="button"
+                  aria-label="Move forward"
+                  title="Move forward"
+                  onClick={() => controller.current?.move("forward")}
+                >
+                  +
+                </button>
+              </div>
+            ) : null}
             <button className="button ghost" type="button" onClick={() => controller.current?.recenter()}>
               Recenter
             </button>

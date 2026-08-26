@@ -6,8 +6,6 @@ import {
   quaternionAngularDistanceDegrees,
   quaternionFromDeviceOrientation,
   relativeDeviceOrientation,
-  screenAdjustedDeviceOrientation,
-  screenOrientationCompensationDegrees,
   StabilizedDeviceOrientation,
   stabilizeDeviceOrientation,
   offsetZenithCameraBasis,
@@ -73,21 +71,22 @@ describe("device orientation quaternion pipeline", () => {
     closeVector(zenithForwardFromRelativeDeviceOrientation(upwardTurn), [0, 0.5, Math.sqrt(3) / 2]);
   });
 
-  test("keeps the complete camera basis stable when the screen moves from portrait to landscape", () => {
-    const portrait = screenAdjustedDeviceOrientation({ alpha: 0, beta: 90, gamma: 0, screenAngleDegrees: 0 });
-    // W3C's equivalent upright pose with the top of the screen pointing right.
-    const landscape = screenAdjustedDeviceOrientation({ alpha: 270, beta: 0, gamma: 90, screenAngleDegrees: 90 });
-    const basis = zenithCameraBasisFromRelativeDeviceOrientation(relativeDeviceOrientation(portrait, landscape));
+  test("preserves physical roll instead of snapping the camera up to portrait or landscape", () => {
+    const portrait = quaternionFromDeviceOrientation({ alpha: 0, beta: 90, gamma: 0 });
+    // Same forward ray after a physical 90° clockwise roll around the screen normal.
+    const rolled = quaternionFromDeviceOrientation({ alpha: 270, beta: 0, gamma: 90 });
+    const basis = zenithCameraBasisFromRelativeDeviceOrientation(relativeDeviceOrientation(portrait, rolled));
     closeVector(basis.forward, [0, 0, 1]);
-    closeVector(basis.up, [0, 1, 0]);
-    closeVector(basis.right, [-1, 0, 0]);
+    closeVector(basis.up, [-1, 0, 0]);
+    closeVector(basis.right, [0, -1, 0]);
   });
 
-  test("normalizes iPhone's legacy clockwise screen angle to the modern convention", () => {
-    expect(screenOrientationCompensationDegrees(90, -90)).toBe(90);
-    expect(screenOrientationCompensationDegrees(undefined, -90)).toBe(90);
-    expect(screenOrientationCompensationDegrees(undefined, 90)).toBe(-90);
-    expect(screenOrientationCompensationDegrees(undefined, undefined)).toBe(0);
+  test("preserves an arbitrary partial roll rather than quantizing it to screen orientation", () => {
+    const relativeRoll = quaternionFromAxisAngle([0, 0, 1], -Math.PI / 4);
+    const basis = zenithCameraBasisFromRelativeDeviceOrientation(relativeRoll);
+    closeVector(basis.forward, [0, 0, 1]);
+    closeVector(basis.up, [-Math.SQRT1_2, Math.SQRT1_2, 0]);
+    closeVector(basis.right, [-Math.SQRT1_2, -Math.SQRT1_2, 0]);
   });
 
   test("crosses the zenith and reaches the rear hemisphere without flipping the camera basis", () => {

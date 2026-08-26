@@ -3,10 +3,10 @@ import { audienceVenuePlan } from "../geometry/audience-in-space.js";
 import { clamp, normalize, type Vec3 } from "../projection.js";
 import {
   offsetZenithCameraBasis,
-  screenOrientationCompensationDegrees,
   StabilizedDeviceOrientation,
   zenithCameraBasisFromRelativeDeviceOrientation,
 } from "./device-orientation.js";
+import { LookaroundNavigation } from "./lookaround-navigation.js";
 import { buildImmersiveCarrierMesh, immersiveArPlacement, immersiveVrModelMatrix } from "./spatial-preview-mesh.js";
 
 export type ImmersivePreviewMode = "lookaround" | "immersive-vr" | "immersive-ar";
@@ -30,12 +30,14 @@ export type ImmersiveRendererUpdate = {
   readonly status: string;
   readonly scaleLabel?: string;
   readonly sensorActive?: boolean;
+  readonly positionLabel?: string;
 };
 
 export type ImmersivePreviewController = {
   readonly finished: Promise<void>;
   readonly end: () => Promise<void>;
   readonly recenter: () => void;
+  readonly move: (direction: "forward" | "backward") => void;
 };
 
 type WakeLockNavigator = Navigator & {
@@ -69,28 +71,47 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
     resolveFinished = resolve;
   });
   const plan = audienceVenuePlan(input.audience, input.spec.projectionMode, input.spec.surface);
-  const eye: Vec3 = [
+  const baseEye: Vec3 = [
     input.audience.xMeters - plan.projectionObserver.xMeters,
     input.audience.eyeHeightMeters - plan.projectionObserver.eyeHeightMeters,
     input.audience.zMeters - plan.projectionObserver.zMeters,
   ];
   const sensorOrientation = new StabilizedDeviceOrientation();
+  const navigation = new LookaroundNavigation(spatialMovementRangeMeters(plan));
   let lastFrameTime: number | null = null;
   let receivedOrientation = false;
-  let dragYaw = 0;
-  let dragPitch = 0;
-  let pointer: { id: number; x: number; y: number; yaw: number; pitch: number } | null = null;
+  let latestCameraBasis = offsetZenithCameraBasis(
+    zenithCameraBasisFromRelativeDeviceOrientation(sensorOrientation.advance(0)),
+    input.audience.yawDegrees,
+    input.audience.pitchDegrees,
+  );
+  let lastPositionLabel = "";
   let wakeLock: { release: () => Promise<void> } | null = null;
+
+  const positionLabel = () => `OFFSET ${navigation.state().offsetMeters.toFixed(2)}m`;
+  const activeStatus = () =>
+    receivedOrientation
+      ? `${input.label} · full-sphere orientation and spatial roll active; pinch or wheel to move.`
+      : permissionState === "granted"
+        ? `${input.label} · waiting for motion; drag to look, pinch or wheel to move.`
+        : `${input.label} · drag to look; pinch or wheel to move.`;
+  const reportPosition = (force = false) => {
+    const nextPositionLabel = positionLabel();
+    if (!force && nextPositionLabel === lastPositionLabel) return;
+    lastPositionLabel = nextPositionLabel;
+    input.onUpdate({
+      status: activeStatus(),
+      sensorActive: receivedOrientation,
+      positionLabel: nextPositionLabel,
+    });
+  };
 
   const recenter = () => {
     sensorOrientation.recenter();
     lastFrameTime = null;
-    dragYaw = 0;
-    dragPitch = 0;
-    input.onUpdate({
-      status: permissionState === "granted" ? "Phone orientation recentered." : "Touch view recentered.",
-      sensorActive: receivedOrientation,
-    });
+    navigation.recenter(latestCameraBasis.forward);
+    lastPositionLabel = "";
+    reportPosition(true);
   };
 
   const orientation = (event: DeviceOrientationEvent) => {
@@ -99,37 +120,40 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
       alpha: event.alpha,
       beta: event.beta,
       gamma: event.gamma,
-      screenAngleDegrees: screenOrientationAngleDegrees(),
     });
     if (firstReading) {
       receivedOrientation = true;
-      input.onUpdate({
-        status: `${input.label} · stabilized full-sphere orientation active; drag also works.`,
-        sensorActive: true,
-      });
+      reportPosition(true);
     }
   };
   const pointerDown = (event: PointerEvent) => {
-    pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, yaw: dragYaw, pitch: dragPitch };
+    navigation.pointerDown(event.pointerId, event.clientX, event.clientY, latestCameraBasis.forward);
     input.canvas.setPointerCapture(event.pointerId);
   };
   const pointerMove = (event: PointerEvent) => {
-    if (!pointer || pointer.id !== event.pointerId) return;
-    dragYaw = pointer.yaw + (event.clientX - pointer.x) * 0.16;
-    dragPitch = clamp(pointer.pitch + (event.clientY - pointer.y) * 0.13, -80, 80);
+    const gesture = navigation.pointerMove(event.pointerId, event.clientX, event.clientY, latestCameraBasis.forward);
+    if (gesture === "pinch") reportPosition();
   };
   const pointerEnd = (event: PointerEvent) => {
-    if (!pointer || pointer.id !== event.pointerId) return;
     if (input.canvas.hasPointerCapture(event.pointerId)) input.canvas.releasePointerCapture(event.pointerId);
-    pointer = null;
+    navigation.pointerEnd(event.pointerId, latestCameraBasis.forward);
   };
-  const resize = () => resizeCanvas(input.canvas);
+  const wheel = (event: WheelEvent) => {
+    event.preventDefault();
+    navigation.dollyFromWheel(event.deltaY, latestCameraBasis.forward);
+    reportPosition();
+  };
+  const resize = () => {
+    resizeCanvas(input.canvas);
+    navigation.setViewportSize(input.canvas.clientWidth, input.canvas.clientHeight);
+  };
 
   resize();
   input.canvas.addEventListener("pointerdown", pointerDown);
   input.canvas.addEventListener("pointermove", pointerMove);
   input.canvas.addEventListener("pointerup", pointerEnd);
   input.canvas.addEventListener("pointercancel", pointerEnd);
+  input.canvas.addEventListener("wheel", wheel, { passive: false });
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", resize);
   screen.orientation?.addEventListener("change", resize);
@@ -148,9 +172,10 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
   input.onUpdate({
     status:
       permissionState === "granted"
-        ? `${input.label} · orientation permission granted; waiting for motion. Drag also works.`
-        : `${input.label} · orientation unavailable; drag to look around.`,
+        ? `${input.label} · waiting for motion; drag to look, pinch or wheel to move.`
+        : `${input.label} · drag to look; pinch or wheel to move.`,
     sensorActive: false,
+    positionLabel: positionLabel(),
   });
 
   const render = (time: number) => {
@@ -158,15 +183,21 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
     const deltaMs = lastFrameTime === null ? 1000 / 60 : time - lastFrameTime;
     lastFrameTime = time;
     const sensorBasis = zenithCameraBasisFromRelativeDeviceOrientation(sensorOrientation.advance(deltaMs));
-    const cameraBasis = offsetZenithCameraBasis(
+    const navigationState = navigation.state();
+    latestCameraBasis = offsetZenithCameraBasis(
       sensorBasis,
-      input.audience.yawDegrees + dragYaw,
-      input.audience.pitchDegrees + dragPitch,
+      input.audience.yawDegrees + navigationState.yawDegrees,
+      input.audience.pitchDegrees + navigationState.pitchDegrees,
     );
+    const eye: Vec3 = [
+      baseEye[0] + navigationState.offset[0],
+      baseEye[1] + navigationState.offset[1],
+      baseEye[2] + navigationState.offset[2],
+    ];
     const target: Vec3 = [
-      eye[0] + cameraBasis.forward[0],
-      eye[1] + cameraBasis.forward[1],
-      eye[2] + cameraBasis.forward[2],
+      eye[0] + latestCameraBasis.forward[0],
+      eye[1] + latestCameraBasis.forward[1],
+      eye[2] + latestCameraBasis.forward[2],
     ];
     const projection = perspectiveMatrix(
       input.audience.fovDegrees,
@@ -174,7 +205,7 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
       0.02,
       Math.max(200, input.audience.domeRadiusMeters * 4),
     );
-    const view = lookAtMatrix(eye, target, cameraBasis.up);
+    const view = lookAtMatrix(eye, target, latestCameraBasis.up);
     renderer.draw(projection, view, identityMatrix(), {
       x: 0,
       y: 0,
@@ -195,6 +226,7 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
     input.canvas.removeEventListener("pointermove", pointerMove);
     input.canvas.removeEventListener("pointerup", pointerEnd);
     input.canvas.removeEventListener("pointercancel", pointerEnd);
+    input.canvas.removeEventListener("wheel", wheel);
     window.removeEventListener("resize", resize);
     window.removeEventListener("orientationchange", resize);
     screen.orientation?.removeEventListener("change", resize);
@@ -205,7 +237,16 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
     resolveFinished();
   };
   input.signal.addEventListener("abort", abort, { once: true });
-  return { finished, end, recenter };
+  return {
+    finished,
+    end,
+    recenter,
+    move: (direction) => {
+      const sign = direction === "forward" ? 1 : -1;
+      navigation.dollyBy(sign * navigation.dollyStepMeters(), latestCameraBasis.forward);
+      reportPosition(true);
+    },
+  };
 }
 
 async function startWebXr(input: ImmersivePreviewRendererInput): Promise<ImmersivePreviewController> {
@@ -340,6 +381,7 @@ async function startWebXr(input: ImmersivePreviewRendererInput): Promise<Immersi
           scaleLabel: sessionMode === "immersive-ar" ? `1:${ar.scaleDenominator}` : undefined,
         });
       },
+      move: () => undefined,
     };
   } catch (error) {
     hitTestSource?.cancel();
@@ -531,9 +573,8 @@ function resizeCanvas(canvas: HTMLCanvasElement): void {
   if (canvas.height !== height) canvas.height = height;
 }
 
-function screenOrientationAngleDegrees(): number {
-  const legacyAngle = (window as Window & { readonly orientation?: number }).orientation;
-  return screenOrientationCompensationDegrees(screen.orientation?.angle, legacyAngle);
+function spatialMovementRangeMeters(plan: ReturnType<typeof audienceVenuePlan>): number {
+  return clamp(Math.min(plan.widthMeters, plan.depthMeters, plan.heightMeters) * 0.35, 0.5, 4);
 }
 
 function identityMatrix(): Float32Array {

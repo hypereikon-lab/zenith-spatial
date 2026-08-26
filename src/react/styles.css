@@ -1057,7 +1057,7 @@ input[type="checkbox"] {
   border: 1px dashed var(--cyan);
   background: rgba(12, 33, 38, 0.9);
   color: var(--cyan);
-  content: "DROP IMAGE FILES";
+  content: "DROP MEDIA FILES";
   font:
     700 11px ui-monospace,
     SFMono-Regular,
@@ -1889,12 +1889,17 @@ input[type="range"] {
   background: #050606;
 }
 
-.pixel-scroll img {
+.pixel-scroll img,
+.pixel-scroll video {
   display: block;
   height: auto;
   margin: auto;
   border: 1px solid #394047;
   box-shadow: 0 12px 44px rgba(0, 0, 0, 0.5);
+  background: #000;
+}
+
+.pixel-scroll img {
   image-rendering: auto;
 }
 

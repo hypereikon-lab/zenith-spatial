@@ -114,7 +114,7 @@ export function WorkbenchApp() {
                   disabled
                     ? room.id === "generate"
                       ? "Commit the current Plate Draft first."
-                      : "Commit or import an image first."
+                      : "Commit or import media first."
                     : room.noun
                 }
                 onClick={() => void execute(chooseRoom(room.id), "navigation")}
@@ -148,7 +148,7 @@ export function WorkbenchApp() {
             ref={mediaInput}
             className="visually-hidden"
             type="file"
-            accept="image/*"
+            accept="image/*,video/mp4,.mp4"
             onChange={(event) => {
               void addMedia(event.currentTarget.files?.[0]);
               event.currentTarget.value = "";

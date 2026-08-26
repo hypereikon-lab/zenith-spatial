@@ -28,6 +28,7 @@ describe("immersive preview Effect service", () => {
         canvas: {} as HTMLCanvasElement,
         overlayRoot: {} as HTMLElement,
         mediaUrl: "blob:test",
+        mediaKind: "image",
         spec: {} as never,
         audience: {} as never,
         label: "Test",

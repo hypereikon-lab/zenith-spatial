@@ -13,6 +13,19 @@ export function imageFilesFromList(files: ArrayLike<File>): File[] {
   return Array.from(files).filter((file) => file.type.startsWith("image/"));
 }
 
+export function reviewMediaFilesFromList(files: ArrayLike<File>): File[] {
+  return Array.from(files).flatMap((file) => {
+    if (file.type.startsWith("image/")) return [file];
+    if (!isMp4File(file)) return [];
+    if (file.type === "video/mp4") return [file];
+    return [new File([file], file.name, { type: "video/mp4", lastModified: file.lastModified })];
+  });
+}
+
+export function isMp4File(file: Pick<File, "name" | "type">): boolean {
+  return file.type.toLowerCase() === "video/mp4" || file.name.toLowerCase().endsWith(".mp4");
+}
+
 export function imageFilesFromClipboard(data: ClipboardImageData, now = Date.now()): File[] {
   const directFiles = imageFilesFromList(data.files);
   const candidates =

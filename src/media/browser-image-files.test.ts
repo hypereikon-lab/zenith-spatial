@@ -1,12 +1,31 @@
 import { describe, expect, test } from "vitest";
 
-import { imageFilesFromClipboard, imageFilesFromList, type ClipboardImageData } from "./browser-image-files.js";
+import {
+  imageFilesFromClipboard,
+  imageFilesFromList,
+  reviewMediaFilesFromList,
+  type ClipboardImageData,
+} from "./browser-image-files.js";
 
 describe("browser image file intake", () => {
   test("keeps only image files from a file picker or drop", () => {
     const image = new File(["image"], "dome.png", { type: "image/png" });
     const text = new File(["text"], "notes.txt", { type: "text/plain" });
     expect(imageFilesFromList([image, text])).toEqual([image]);
+  });
+
+  test("accepts images and MP4 files for Review while excluding other video containers", () => {
+    const image = new File(["image"], "dome.png", { type: "image/png" });
+    const mp4 = new File(["video"], "dome.mp4", { type: "video/mp4" });
+    const untypedMp4 = new File(["video"], "export.MP4", { type: "" });
+    const mov = new File(["video"], "dome.mov", { type: "video/quicktime" });
+    const accepted = reviewMediaFilesFromList([image, mp4, untypedMp4, mov]);
+    expect(accepted).toHaveLength(3);
+    expect(accepted.map((file) => [file.name, file.type])).toEqual([
+      ["dome.png", "image/png"],
+      ["dome.mp4", "video/mp4"],
+      ["export.MP4", "video/mp4"],
+    ]);
   });
 
   test("uses clipboard files without duplicating their matching items", () => {

@@ -68,7 +68,7 @@ export type SourceMapPreviewRenderOptions = {
   projectionSurface?: ProjectionSurface;
 };
 
-export type SourceMapPreviewSource = ImageBitmap | HTMLCanvasElement;
+export type SourceMapPreviewSource = ImageBitmap | HTMLCanvasElement | HTMLVideoElement;
 
 export type SourceMapPreviewRenderer = {
   setSourceImage: (source: SourceMapPreviewSource) => void;
@@ -494,7 +494,7 @@ export async function createSourceMapPreviewRenderer(
 }
 
 function sourceDimensions(source: SourceMapPreviewSource): { width: number; height: number } | null {
-  const width = Math.round(source.width || 0);
-  const height = Math.round(source.height || 0);
+  const width = Math.round("videoWidth" in source ? source.videoWidth : source.width || 0);
+  const height = Math.round("videoHeight" in source ? source.videoHeight : source.height || 0);
   return width > 0 && height > 0 ? { width, height } : null;
 }

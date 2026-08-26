@@ -7,7 +7,7 @@ Zenith is a local spatial-image authoring instrument for fulldome and other imme
 3. **Generate** from that exact commit, with explicit paid confirmation when Runway is configured, or import an Image Take locally.
 4. **Review** a Plate Commit or Image Take as exact pixels or through its pinned spatial geometry.
 
-**Add media** is the direct path around that Plate workflow: choose images from the header or Review rail, or drop completed fulldome images directly on the Review viewport. Each image opens as standalone Review media with exact pixels first and leaves Plate layers, commits, and generation state untouched. Switch to Spatial projection, Audience in Space, or Immersive Preview when carrier inspection is useful. The imported bytes remain part of local and cloud `.zenith` saves.
+**Add media** is the direct path around that Plate workflow: choose images or MP4 video from the header or Review rail, or drop completed fulldome media directly on the Review viewport. Each item opens as standalone Review media and leaves Plate layers, commits, and generation state untouched. Images begin in exact pixels; MP4 uses native playback controls with its original audio. Switch to Spatial projection, Audience in Space, or Immersive Preview to map either one live onto the current carrier. Spatial MP4 playback loops muted so browsers can start it reliably. The imported bytes remain part of local and cloud `.zenith` saves. Plate Sketch sources remain image-only.
 
 Compose accepts one or more Plate sources through its picker or by dropping them on the Dome Canvas. An image copied from another application can also be pasted while Compose is active; it becomes a normal editable Plate layer with the same placement, save, and provenance contracts as a file import.
 

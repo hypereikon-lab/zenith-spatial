@@ -89,6 +89,49 @@ describe("browser workbench media commands", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  test("adds an MP4 as standalone Review media with decoded frame dimensions", async () => {
+    const document = createInitialZenithDocument({ now: NOW, projectId: "project-video" });
+    const file = new File(["MP4-BYTES"], "fulldome.MP4", { type: "" });
+    const layer = Layer.mergeAll(
+      WorkbenchService.fromDocument(document),
+      MediaRepository.test({
+        createObjectUrl: () => "blob:standalone-video",
+        revokeObjectUrl: () => undefined,
+      }),
+      IdGenerator.deterministic(["media-video", "take-video"]),
+    );
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const imported = yield* importReviewMedia(file, {
+            decodeVideo: async () => ({ width: 2048, height: 2048 }),
+          });
+          const workbench = yield* WorkbenchService;
+          const changed = workbench.getSnapshot().document;
+          const asset = changed.project.assets[imported.mediaAssetId];
+
+          expect(asset).toMatchObject({
+            kind: "video",
+            filename: "fulldome.MP4",
+            mime: "video/mp4",
+            width: 2048,
+            height: 2048,
+          });
+          expect(imported).toMatchObject({
+            id: "take-video",
+            label: "Media 1",
+            kind: "imported",
+            plateCommitId: null,
+            provenance: undefined,
+          });
+          expect(imported.spatialSpec).toMatchObject({ sourceWidth: 2048, sourceHeight: 2048 });
+          expect(changed.workspace.room).toBe("review");
+        }).pipe(Effect.provide(layer)),
+      ),
+    );
+  });
 });
 
 function imageAsset(id: string, filename: string, width: number, height: number): MediaAsset {

@@ -21,7 +21,7 @@ describe("project persistence", () => {
   test("roundtrips the current domain and restores exact runtime media bytes", async () => {
     const plateAsset = imageAsset("media-plate", "plate-commit.png");
     const takeAsset = imageAsset("media-take", "image-take.png");
-    const standaloneAsset = imageAsset("media-standalone", "standalone.png");
+    const standaloneAsset = videoAsset("media-standalone", "standalone.mp4");
     let document = createInitialZenithDocument({ now: NOW, projectId: "project-roundtrip" });
     const composition = selectedComposition(document);
     const draft = structuredClone(composition.plateDraft);
@@ -90,7 +90,7 @@ describe("project persistence", () => {
           const workbench = yield* WorkbenchService;
           yield* media.put(plateAsset.id, { blob: new Blob(["PLATE-BYTES"], { type: "image/png" }) });
           yield* media.put(takeAsset.id, { blob: new Blob(["TAKE-BYTES"], { type: "image/png" }) });
-          yield* media.put(standaloneAsset.id, { blob: new Blob(["STANDALONE-BYTES"], { type: "image/png" }) });
+          yield* media.put(standaloneAsset.id, { blob: new Blob(["VIDEO-BYTES"], { type: "video/mp4" }) });
 
           const archive = yield* saveProjectArchive;
           const contents = yield* Effect.promise(() => readProjectArchiveBlob(archive));
@@ -107,7 +107,8 @@ describe("project persistence", () => {
           const restoredStandalone = yield* media.readBlob(standaloneAsset);
           expect(yield* Effect.promise(() => restoredPlate.text())).toBe("PLATE-BYTES");
           expect(yield* Effect.promise(() => restoredTake.text())).toBe("TAKE-BYTES");
-          expect(yield* Effect.promise(() => restoredStandalone.text())).toBe("STANDALONE-BYTES");
+          expect(restoredStandalone.type).toBe("video/mp4");
+          expect(yield* Effect.promise(() => restoredStandalone.text())).toBe("VIDEO-BYTES");
         }).pipe(Effect.provide(layer)),
       ),
     );
@@ -120,6 +121,19 @@ function imageAsset(id: string, filename: string): MediaAsset {
     kind: "image",
     filename,
     mime: "image/png",
+    width: 1920,
+    height: 1920,
+    storageRef: `media:${id}`,
+    createdAt: NOW,
+  };
+}
+
+function videoAsset(id: string, filename: string): MediaAsset {
+  return {
+    id,
+    kind: "video",
+    filename,
+    mime: "video/mp4",
     width: 1920,
     height: 1920,
     storageRef: `media:${id}`,

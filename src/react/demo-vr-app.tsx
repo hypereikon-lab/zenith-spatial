@@ -77,6 +77,7 @@ export function DemoVrApp() {
 
           <ImmersivePreviewPanel
             mediaUrl={mediaUrl}
+            mediaKind="image"
             spec={spec}
             audience={audience}
             label={take?.label ?? "Demo · Forest Domemaster 180°"}

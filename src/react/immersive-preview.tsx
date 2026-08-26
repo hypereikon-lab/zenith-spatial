@@ -22,6 +22,7 @@ const INITIAL_CAPABILITIES: ImmersiveCapabilities = {
 
 export function ImmersivePreviewPanel({
   mediaUrl,
+  mediaKind,
   spec,
   audience,
   label,
@@ -29,6 +30,7 @@ export function ImmersivePreviewPanel({
   presentation = "panel",
 }: {
   readonly mediaUrl: string | null;
+  readonly mediaKind: "image" | "video";
   readonly spec: ImageSpatialSpec | null;
   readonly audience: AudienceInSpace;
   readonly label: string;
@@ -115,6 +117,7 @@ export function ImmersivePreviewPanel({
           canvas: targetCanvas,
           overlayRoot: targetOverlay,
           mediaUrl,
+          mediaKind,
           spec,
           audience,
           label,

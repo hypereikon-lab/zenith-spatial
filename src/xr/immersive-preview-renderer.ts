@@ -1,5 +1,6 @@
 import type { AudienceInSpace, ImageSpatialSpec } from "../domain/schema.js";
 import { audienceVenuePlan } from "../geometry/audience-in-space.js";
+import { disposeVideoSource, loadVideoSource } from "../media/video-source.js";
 import { clamp, normalize, type Vec3 } from "../projection.js";
 import {
   offsetZenithCameraBasis,
@@ -18,6 +19,7 @@ export type ImmersivePreviewRendererInput = {
   readonly canvas: HTMLCanvasElement;
   readonly overlayRoot: HTMLElement;
   readonly mediaUrl: string;
+  readonly mediaKind: "image" | "video";
   readonly spec: ImageSpatialSpec;
   readonly audience: AudienceInSpace;
   readonly label: string;
@@ -55,6 +57,7 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
   const renderer = await GlSpatialRenderer.create(
     input.canvas,
     input.mediaUrl,
+    input.mediaKind,
     input.spec,
     input.audience,
     input.signal,
@@ -296,7 +299,14 @@ async function startWebXr(input: ImmersivePreviewRendererInput): Promise<Immersi
   input.signal.addEventListener("abort", abort, { once: true });
 
   try {
-    renderer = await GlSpatialRenderer.create(input.canvas, input.mediaUrl, input.spec, input.audience, input.signal);
+    renderer = await GlSpatialRenderer.create(
+      input.canvas,
+      input.mediaUrl,
+      input.mediaKind,
+      input.spec,
+      input.audience,
+      input.signal,
+    );
     if (ended) throw new Error("The WebXR session ended while media was loading.");
     await renderer.makeXrCompatible();
     const layer = new XRWebGLLayer(session, renderer.gl, { alpha: sessionMode === "immersive-ar", antialias: true });
@@ -400,13 +410,16 @@ class GlSpatialRenderer {
   private readonly vertexArray: WebGLVertexArrayObject;
   private readonly mvpLocation: WebGLUniformLocation;
   private readonly indexCount: number;
+  private readonly video: HTMLVideoElement | null;
+  private videoTime = -1;
   private destroyed = false;
 
   private constructor(
     canvas: HTMLCanvasElement,
-    media: ImageBitmap,
+    media: ImageBitmap | HTMLVideoElement,
     spec: ImageSpatialSpec,
     audience: AudienceInSpace,
+    video: HTMLVideoElement | null,
   ) {
     const gl = canvas.getContext("webgl2", {
       alpha: true,
@@ -423,6 +436,7 @@ class GlSpatialRenderer {
     this.texture = requiredResource(gl.createTexture(), "source texture");
     this.vertexArray = requiredResource(gl.createVertexArray(), "vertex array");
     this.mvpLocation = requiredResource(gl.getUniformLocation(this.program, "uMvp"), "MVP uniform");
+    this.video = video;
 
     const mesh = buildImmersiveCarrierMesh(spec, audience);
     this.indexCount = mesh.indices.length;
@@ -439,7 +453,7 @@ class GlSpatialRenderer {
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, video ? gl.LINEAR : gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(
       gl.TEXTURE_2D,
@@ -447,7 +461,7 @@ class GlSpatialRenderer {
       spec.projectionMode === "cylinder-wall" ? gl.REPEAT : gl.CLAMP_TO_EDGE,
     );
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.generateMipmap(gl.TEXTURE_2D);
+    if (!video) gl.generateMipmap(gl.TEXTURE_2D);
     gl.useProgram(this.program);
     gl.uniform1i(gl.getUniformLocation(this.program, "uSource"), 0);
     gl.enable(gl.DEPTH_TEST);
@@ -459,15 +473,31 @@ class GlSpatialRenderer {
   static async create(
     canvas: HTMLCanvasElement,
     mediaUrl: string,
+    mediaKind: "image" | "video",
     spec: ImageSpatialSpec,
     audience: AudienceInSpace,
     signal: AbortSignal,
   ): Promise<GlSpatialRenderer> {
+    if (mediaKind === "video") {
+      const video = await loadVideoSource(mediaUrl, {
+        autoplay: true,
+        loop: true,
+        muted: true,
+        signal,
+        waitFor: "frame",
+      });
+      try {
+        return new GlSpatialRenderer(canvas, video, spec, audience, video);
+      } catch (error) {
+        disposeVideoSource(video);
+        throw error;
+      }
+    }
     const response = await fetch(mediaUrl, { signal });
     if (!response.ok) throw new Error(`Could not load immersive media (HTTP ${response.status}).`);
     const bitmap = await createImageBitmap(await response.blob(), { imageOrientation: "from-image" });
     try {
-      return new GlSpatialRenderer(canvas, bitmap, spec, audience);
+      return new GlSpatialRenderer(canvas, bitmap, spec, audience, null);
     } finally {
       bitmap.close();
     }
@@ -493,6 +523,11 @@ class GlSpatialRenderer {
     gl.uniformMatrix4fv(this.mvpLocation, false, multiplyMatrices(projection, multiplyMatrices(view, model)));
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    if (this.video && this.video.readyState >= 2 && this.video.currentTime !== this.videoTime) {
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, this.video);
+      this.videoTime = this.video.currentTime;
+    }
     gl.bindVertexArray(this.vertexArray);
     gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_INT, 0);
     gl.bindVertexArray(null);
@@ -508,6 +543,7 @@ class GlSpatialRenderer {
     gl.deleteVertexArray(this.vertexArray);
     gl.deleteProgram(this.program);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (this.video) disposeVideoSource(this.video);
   }
 }
 

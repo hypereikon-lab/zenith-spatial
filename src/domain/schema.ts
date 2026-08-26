@@ -24,7 +24,7 @@ const portableStorageRef = nonEmptyString.pipe(
 export const MediaAssetSchema = Schema.mutable(
   Schema.Struct({
     id: nonEmptyString,
-    kind: Schema.Literal("image"),
+    kind: Schema.Literal("image", "video"),
     filename: nonEmptyString,
     mime: nonEmptyString,
     width: positiveInteger,
@@ -247,6 +247,9 @@ export const ProjectSchema = Schema.mutable(
     const compositionIds = new Set<string>();
     for (const [assetId, asset] of Object.entries(project.assets)) {
       if (assetId !== asset.id) issues.push({ path: ["assets", assetId], message: "asset key must equal asset id" });
+      if (asset.kind === "video" && !asset.mime.toLowerCase().startsWith("video/mp4")) {
+        issues.push({ path: ["assets", assetId, "mime"], message: "Review video media must be MP4" });
+      }
     }
     for (const [index, composition] of project.compositions.entries()) {
       if (compositionIds.has(composition.id)) {
@@ -256,6 +259,11 @@ export const ProjectSchema = Schema.mutable(
       for (const assetId of composition.sourceAssetIds) {
         if (!assetIds.has(assetId)) {
           issues.push({ path: ["compositions", index, "sourceAssetIds"], message: `missing asset ${assetId}` });
+        } else if (project.assets[assetId]?.kind !== "image") {
+          issues.push({
+            path: ["compositions", index, "sourceAssetIds"],
+            message: `Plate source ${assetId} must be an image`,
+          });
         }
       }
       for (const commit of composition.plateCommits) {
@@ -272,6 +280,12 @@ export const ProjectSchema = Schema.mutable(
           });
         }
         const media = project.assets[commit.mediaAssetId];
+        if (media && media.kind !== "image") {
+          issues.push({
+            path: ["compositions", index, "plateCommits"],
+            message: `Plate Commit ${commit.id} media must be an image`,
+          });
+        }
         if (media && (media.width !== commit.draft.raster.width || media.height !== commit.draft.raster.height)) {
           issues.push({
             path: ["compositions", index, "plateCommits"],
@@ -293,6 +307,12 @@ export const ProjectSchema = Schema.mutable(
           });
         }
         const media = project.assets[take.mediaAssetId];
+        if (media?.kind === "video" && (take.kind === "generated" || take.plateCommitId || take.provenance)) {
+          issues.push({
+            path: ["compositions", index, "imageTakes"],
+            message: `Video media ${take.id} must remain a standalone Review item`,
+          });
+        }
         if (
           take.kind === "generated" &&
           media &&

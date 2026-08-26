@@ -18,11 +18,13 @@ import {
 } from "../domain/project.js";
 import type { ImageTake, MediaAsset, PlateCommit, PlateDraft } from "../domain/schema.js";
 import { canvasToBlob } from "../media/canvas-utils.js";
+import { isMp4File } from "../media/browser-image-files.js";
 import {
   embedZenithPlateMetadataInPngBlob,
   readZenithPlateMetadataFromPngBlob,
   readZenithProvenanceFromPngBlob,
 } from "../media/png-zenith-provenance.js";
+import { readVideoDimensions } from "../media/video-source.js";
 import { defaultPlateSketchPlacement } from "../plates/plate-sketch-arrangement.js";
 import { DEFAULT_PLATE_REFERENCES } from "../plates/default-plate-profile.js";
 import type { PlateSketchPreviewInput, PlateSketchPreviewSession } from "../plates/plate-sketch-preview-session.js";
@@ -471,26 +473,64 @@ export const openDefaultReviewMedia = Effect.gen(function* () {
   return selectedImageTake(selectedComposition(document))!;
 });
 
-/** Adds an image directly to Review without turning it into a Plate or pinning it to a Plate Commit. */
-export function importReviewMedia(file: File) {
-  return importReviewImage(file, "standalone-media");
+/** Adds image or MP4 media directly to Review without turning it into a Plate or pinning it to a Plate Commit. */
+export function importReviewMedia(
+  file: File,
+  options: {
+    readonly decodeVideo?: (file: Blob) => Promise<{ width: number; height: number }>;
+  } = {},
+) {
+  return importReviewSource(file, "standalone-media", options.decodeVideo ?? readVideoDimensions);
 }
 
-function importReviewImage(file: File, importMode: "image-take" | "standalone-media") {
+function importReviewImage(file: File, importMode: "image-take") {
+  return importReviewSource(file, importMode, readVideoDimensions);
+}
+
+function importReviewSource(
+  file: File,
+  importMode: "image-take" | "standalone-media",
+  decodeVideo: (file: Blob) => Promise<{ width: number; height: number }>,
+) {
   return Effect.gen(function* () {
-    if (!file.type.startsWith("image/")) {
+    const mediaKind = file.type.startsWith("image/") ? "image" : isMp4File(file) ? "video" : null;
+    if (!mediaKind || (mediaKind === "video" && importMode !== "standalone-media")) {
       return yield* Effect.fail(
-        new BrowserWorkbenchError({ operation: "take", message: "The Image Take must be an image." }),
+        new BrowserWorkbenchError({
+          operation: "take",
+          message:
+            importMode === "standalone-media"
+              ? "Review media must be an image or MP4 video."
+              : "The Image Take must be an image.",
+        }),
       );
     }
+    const storedFile =
+      mediaKind === "video" && file.type !== "video/mp4"
+        ? new File([file], file.name, { type: "video/mp4", lastModified: file.lastModified })
+        : file;
     const workbench = yield* WorkbenchService;
     const repository = yield* MediaRepository;
     const ids = yield* IdGenerator;
-    const dimensions = yield* decodeImageDimensions(file, "take");
-    const embeddedProvenance = yield* Effect.tryPromise({
-      try: () => readZenithProvenanceFromPngBlob(file),
-      catch: (cause) => cause,
-    }).pipe(Effect.catchAll(() => Effect.succeed(null)));
+    const dimensions =
+      mediaKind === "image"
+        ? yield* decodeImageDimensions(storedFile, "take")
+        : yield* Effect.tryPromise({
+            try: () => decodeVideo(storedFile),
+            catch: (cause) =>
+              new BrowserWorkbenchError({
+                operation: "take",
+                message: "The selected MP4 video could not be decoded.",
+                cause,
+              }),
+          });
+    const embeddedProvenance =
+      mediaKind === "image"
+        ? yield* Effect.tryPromise({
+            try: () => readZenithProvenanceFromPngBlob(storedFile),
+            catch: (cause) => cause,
+          }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        : null;
     const now = new Date(yield* Clock.currentTimeMillis).toISOString();
     const composition = selectedComposition(workbench.getSnapshot().document);
     const matchingProvenance =
@@ -506,13 +546,17 @@ function importReviewImage(file: File, importMode: "image-take" | "standalone-me
     const takeId = yield* ids.next("image-take");
     const media: MediaAsset = {
       id: mediaId,
-      kind: "image",
-      filename: file.name,
-      mime: file.type || "image/png",
+      kind: mediaKind,
+      filename: storedFile.name,
+      mime: storedFile.type || "image/png",
       width: dimensions.width,
       height: dimensions.height,
       storageRef: `media:${mediaId}`,
-      alt: standalone ? "Standalone review media" : "Imported Image Take",
+      alt: standalone
+        ? mediaKind === "video"
+          ? "Standalone review video"
+          : "Standalone review media"
+        : "Imported Image Take",
       createdAt: now,
     };
     const take: ImageTake = {
@@ -535,7 +579,7 @@ function importReviewImage(file: File, importMode: "image-take" | "standalone-me
       },
       provenance,
     };
-    yield* repository.put(mediaId, { blob: file, file });
+    yield* repository.put(mediaId, { blob: storedFile, file: storedFile });
     yield* workbench
       .updateDocument((document) => addImageTake(document, media, take, now))
       .pipe(Effect.onError(() => repository.remove(mediaId)));

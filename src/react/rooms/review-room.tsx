@@ -27,7 +27,7 @@ import {
   type PlateEditorViewMode,
 } from "../../plates/plate-editor-view.js";
 import { sourceProjectionLabel } from "../../geometry/source-projection.js";
-import { imageFilesFromList } from "../../media/browser-image-files.js";
+import { reviewMediaFilesFromList } from "../../media/browser-image-files.js";
 import { importReviewMedia } from "../../runtime/browser-workbench-commands.js";
 import { chooseImageTake, choosePlateCommit, updateWorkspace } from "../../runtime/workspace-commands.js";
 import { useEffectRunner, useWorkbenchSnapshot } from "../runtime-bridge.js";
@@ -120,16 +120,18 @@ export function ReviewRoom() {
 
   const importPreviewFiles = useCallback(
     async (files: ArrayLike<File>) => {
-      const images = imageFilesFromList(files);
-      if (images.length === 0) {
-        setStatus("Drop or choose one or more image files.");
+      const mediaFiles = reviewMediaFilesFromList(files);
+      if (mediaFiles.length === 0) {
+        setStatus("Drop or choose one or more image or MP4 files.");
         return;
       }
       setImporting(true);
-      setStatus(`Adding ${images.length} image${images.length === 1 ? "" : "s"} to Review…`);
+      setStatus(`Adding ${mediaFiles.length} media file${mediaFiles.length === 1 ? "" : "s"} to Review…`);
       try {
-        for (const image of images) await run(importReviewMedia(image));
-        setStatus(`${images.length} preview image${images.length === 1 ? "" : "s"} added without changing the Plate.`);
+        for (const file of mediaFiles) await run(importReviewMedia(file));
+        setStatus(
+          `${mediaFiles.length} preview item${mediaFiles.length === 1 ? "" : "s"} added without changing the Plate.`,
+        );
       } catch (error) {
         setStatus(readableError(error));
       } finally {
@@ -167,12 +169,17 @@ export function ReviewRoom() {
   }, []);
 
   useEffect(() => {
-    if (!session || !mediaUrl || !spec || displayMode !== "spatial") return;
+    if (!session) return;
+    if (!mediaUrl || !spec || displayMode !== "spatial") {
+      renderSerial.current += 1;
+      session.clearMedia();
+      return;
+    }
     const serial = ++renderSerial.current;
     void session.renderMedia(
       {
         mediaUrl,
-        mediaKind: "image",
+        mediaKind: asset?.kind ?? "image",
         projectionProfile: spec.projectionMode,
         viewerMode: snapshot.document.workspace.viewerMode,
         selectedViewMode: viewMode,
@@ -194,6 +201,7 @@ export function ReviewRoom() {
     camera,
     displayMode,
     invertCarrierMask,
+    asset?.kind,
     mediaUrl,
     session,
     showCarrierMask,
@@ -309,14 +317,14 @@ export function ReviewRoom() {
             ref={mediaInput}
             className="visually-hidden"
             type="file"
-            accept="image/*"
+            accept="image/*,video/mp4,.mp4"
             multiple
             onChange={(event) => {
               void importPreviewFiles(event.currentTarget.files ?? []);
               event.currentTarget.value = "";
             }}
           />
-          <p className="technical-note">Drop completed fulldome images directly on the preview.</p>
+          <p className="technical-note">Drop completed fulldome images or MP4 video directly on the preview.</p>
         </div>
         <div className="panel-section flush">
           <h3>Media &amp; Image Takes</h3>
@@ -330,7 +338,15 @@ export function ReviewRoom() {
                 }
                 onClick={() => selectTarget({ kind: "take", value: take })}
               >
-                <span>{take.kind === "generated" ? "GEN" : isStandaloneReviewMedia(take) ? "MED" : "IMP"}</span>
+                <span>
+                  {take.kind === "generated"
+                    ? "GEN"
+                    : snapshot.document.project.assets[take.mediaAssetId]?.kind === "video"
+                      ? "VID"
+                      : isStandaloneReviewMedia(take)
+                        ? "MED"
+                        : "IMP"}
+                </span>
                 <strong>{take.label}</strong>
                 <small>
                   {take.spatialSpec.targetWidth} × {take.spatialSpec.targetHeight}
@@ -376,7 +392,7 @@ export function ReviewRoom() {
               link.click();
             }}
           >
-            Download original pixels
+            Download original file
           </button>
         </div>
         <div className="panel-section">
@@ -455,7 +471,7 @@ export function ReviewRoom() {
               <canvas
                 ref={setCanvas}
                 className="review-canvas"
-                aria-label="WebGPU spatial image review"
+                aria-label="WebGPU spatial media review"
                 tabIndex={0}
                 onPointerDown={pointerDown}
                 onPointerMove={pointerMove}
@@ -500,13 +516,27 @@ export function ReviewRoom() {
             </>
           ) : mediaUrl && asset ? (
             <div className="pixel-scroll">
-              <img
-                src={mediaUrl}
-                alt={`${target?.value.label ?? "Image"} exact source pixels`}
-                width={asset.width}
-                height={asset.height}
-                style={{ width: `${pixelZoom}%`, maxWidth: "none" }}
-              />
+              {asset.kind === "video" ? (
+                <video
+                  src={mediaUrl}
+                  aria-label={`${target?.value.label ?? "Video"} exact source frames`}
+                  width={asset.width}
+                  height={asset.height}
+                  style={{ width: `${pixelZoom}%`, maxWidth: "none" }}
+                  controls
+                  loop
+                  playsInline
+                  preload="metadata"
+                />
+              ) : (
+                <img
+                  src={mediaUrl}
+                  alt={`${target?.value.label ?? "Image"} exact source pixels`}
+                  width={asset.width}
+                  height={asset.height}
+                  style={{ width: `${pixelZoom}%`, maxWidth: "none" }}
+                />
+              )}
             </div>
           ) : (
             <div className="empty-viewport">
@@ -519,7 +549,9 @@ export function ReviewRoom() {
           <span className="status-dot" aria-hidden="true" />
           <output>
             {displayMode === "pixels"
-              ? "Exact source pixels — no normalization or rewrite is applied in Review."
+              ? asset?.kind === "video"
+                ? "Original MP4 frames and audio — no normalization or rewrite is applied in Review."
+                : "Exact source pixels — no normalization or rewrite is applied in Review."
               : status}
           </output>
           <span>
@@ -538,9 +570,19 @@ export function ReviewRoom() {
         <header className="panel-heading">
           <div>
             <span className="eyebrow">Spatial spec</span>
-            <h2>{standaloneMedia ? "Media" : target?.kind === "take" ? "Image Take" : "Plate Commit"}</h2>
+            <h2>
+              {standaloneMedia
+                ? asset?.kind === "video"
+                  ? "Video"
+                  : "Media"
+                : target?.kind === "take"
+                  ? "Image Take"
+                  : "Plate Commit"}
+            </h2>
           </div>
-          <strong>{standaloneMedia ? "MED" : target?.kind === "take" ? "IMG" : "PLT"}</strong>
+          <strong>
+            {standaloneMedia ? (asset?.kind === "video" ? "VID" : "MED") : target?.kind === "take" ? "IMG" : "PLT"}
+          </strong>
         </header>
         <div className="inspector-scroll">
           {displayMode === "pixels" ? (
@@ -625,9 +667,10 @@ export function ReviewRoom() {
           )}
           <ImmersivePreviewPanel
             mediaUrl={mediaUrl}
+            mediaKind={asset?.kind ?? "image"}
             spec={spec}
             audience={audience}
-            label={target?.value.label ?? "Spatial image"}
+            label={target?.value.label ?? "Spatial media"}
             contentKey={`${snapshot.document.project.id}:${composition.id}:${target?.kind ?? "none"}:${target?.value.id ?? "none"}:${target?.value.mediaAssetId ?? "none"}`}
           />
           {target && spec ? (

@@ -141,10 +141,14 @@ describe("Zenith portable domain", () => {
     });
   });
 
-  test("opens standalone media in Review without changing the Plate workflow", () => {
+  test("opens standalone MP4 media in Review without changing the image-only Plate workflow", () => {
     const initial = createInitialZenithDocument({ now: NOW });
     const before = selectedComposition(initial);
-    const media = imageAsset("asset-standalone", "reference.png", 1600, 900);
+    const media: MediaAsset = {
+      ...imageAsset("asset-standalone", "reference.mp4", 1600, 900),
+      kind: "video",
+      mime: "video/mp4",
+    };
     const take: ImageTake = {
       id: "take-standalone",
       label: "Media 1",

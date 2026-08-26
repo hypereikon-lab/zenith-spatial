@@ -8,7 +8,7 @@ import "./styles.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Zenith root element is missing.");
-const route = resolveZenithAppRoute(window.location.pathname);
+const route = resolveZenithAppRoute(window.location.pathname, window.location.search);
 const RouteApp =
   route === "demo-vr"
     ? lazy(() => import("./demo-vr-app.js").then((module) => ({ default: module.DemoVrApp })))

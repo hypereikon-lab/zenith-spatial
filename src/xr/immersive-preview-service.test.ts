@@ -31,6 +31,7 @@ describe("immersive preview Effect service", () => {
         spec: {} as never,
         audience: {} as never,
         label: "Test",
+        orientationPermission: Promise.resolve("unavailable"),
         onUpdate: vi.fn(),
         onReady,
       }),

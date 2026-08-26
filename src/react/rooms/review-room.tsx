@@ -548,6 +548,7 @@ export function ReviewRoom() {
             spec={spec}
             audience={audience}
             label={target?.value.label ?? "Spatial image"}
+            contentKey={`${snapshot.document.project.id}:${composition.id}:${target?.kind ?? "none"}:${target?.value.id ?? "none"}:${target?.value.mediaAssetId ?? "none"}`}
           />
           {target && spec ? (
             <div className="panel-section">

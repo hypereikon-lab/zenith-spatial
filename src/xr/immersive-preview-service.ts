@@ -4,7 +4,17 @@ import type {
   ImmersivePreviewController,
   ImmersivePreviewMode,
   ImmersivePreviewRendererInput,
+  OrientationPermissionState,
 } from "./immersive-preview-renderer.js";
+
+type ImmersiveRendererModule = typeof import("./immersive-preview-renderer.js");
+
+type DeviceOrientationConstructor = typeof DeviceOrientationEvent & {
+  requestPermission?: () => Promise<"granted" | "denied">;
+};
+
+let rendererModule: ImmersiveRendererModule | null = null;
+let rendererModulePromise: Promise<ImmersiveRendererModule> | null = null;
 
 export type ImmersiveCapabilities = {
   readonly secureContext: boolean;
@@ -25,6 +35,7 @@ export class ImmersivePreviewError extends Data.TaggedError("ImmersivePreviewErr
 }> {}
 
 export interface ImmersivePreviewServiceShape {
+  readonly prepare: Effect.Effect<void, ImmersivePreviewError>;
   readonly capabilities: Effect.Effect<ImmersiveCapabilities, ImmersivePreviewError>;
   readonly run: (input: ImmersivePreviewRunInput) => Effect.Effect<void, ImmersivePreviewError>;
 }
@@ -37,6 +48,7 @@ export class ImmersivePreview extends Context.Tag("zenith/ImmersivePreview")<
 
   static test(capabilities: ImmersiveCapabilities) {
     return Layer.succeed(ImmersivePreview, {
+      prepare: Effect.void,
       capabilities: Effect.succeed(capabilities),
       run: () => Effect.void,
     });
@@ -45,12 +57,23 @@ export class ImmersivePreview extends Context.Tag("zenith/ImmersivePreview")<
 
 export function makeImmersivePreviewService({
   detect = detectImmersiveCapabilities,
+  prepare = preloadImmersivePreviewRenderer,
   start = startImmersivePreview,
 }: {
   detect?: () => Promise<ImmersiveCapabilities>;
+  prepare?: () => Promise<void>;
   start?: (input: ImmersivePreviewRendererInput) => Promise<ImmersivePreviewController>;
 } = {}): ImmersivePreviewServiceShape {
   return {
+    prepare: Effect.tryPromise({
+      try: prepare,
+      catch: (cause) =>
+        new ImmersivePreviewError({
+          mode: "capabilities",
+          message: "Could not prepare the immersive renderer.",
+          cause,
+        }),
+    }),
     capabilities: Effect.tryPromise({
       try: detect,
       catch: (cause) =>
@@ -91,9 +114,21 @@ export function makeImmersivePreviewService({
   };
 }
 
-async function startImmersivePreview(input: ImmersivePreviewRendererInput): Promise<ImmersivePreviewController> {
-  const { startImmersivePreviewRenderer } = await import("./immersive-preview-renderer.js");
-  return startImmersivePreviewRenderer(input);
+function startImmersivePreview(input: ImmersivePreviewRendererInput): Promise<ImmersivePreviewController> {
+  if (rendererModule) return rendererModule.startImmersivePreviewRenderer(input);
+  return loadRendererModule().then((renderer) => renderer.startImmersivePreviewRenderer(input));
+}
+
+async function preloadImmersivePreviewRenderer(): Promise<void> {
+  await loadRendererModule();
+}
+
+function loadRendererModule(): Promise<ImmersiveRendererModule> {
+  rendererModulePromise ??= import("./immersive-preview-renderer.js").then((loaded) => {
+    rendererModule = loaded;
+    return loaded;
+  });
+  return rendererModulePromise;
 }
 
 export async function detectImmersiveCapabilities(): Promise<ImmersiveCapabilities> {
@@ -108,6 +143,16 @@ export async function detectImmersiveCapabilities(): Promise<ImmersiveCapabiliti
     xr.isSessionSupported("immersive-ar").catch(() => false),
   ]);
   return { secureContext, lookaround: true, orientation, vr, ar };
+}
+
+/** Must be invoked directly from the activation gesture on browsers that gate orientation access. */
+export function requestLookaroundOrientationPermission(): Promise<OrientationPermissionState> {
+  if (typeof window === "undefined" || !("DeviceOrientationEvent" in window)) {
+    return Promise.resolve("unavailable");
+  }
+  const constructor = window.DeviceOrientationEvent as DeviceOrientationConstructor;
+  if (!constructor.requestPermission) return Promise.resolve("granted");
+  return constructor.requestPermission().catch(() => "denied");
 }
 
 function immersiveFailureMessage(mode: ImmersivePreviewMode, cause: unknown): string {

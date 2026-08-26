@@ -4,7 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AudienceInSpace, ImageSpatialSpec } from "../domain/schema.js";
 import { audienceVenuePlan } from "../geometry/audience-in-space.js";
 import { sourceProjectionLabel } from "../geometry/source-projection.js";
-import { ImmersivePreview, type ImmersiveCapabilities } from "../xr/immersive-preview-service.js";
+import {
+  ImmersivePreview,
+  requestLookaroundOrientationPermission,
+  type ImmersiveCapabilities,
+} from "../xr/immersive-preview-service.js";
 import type { ImmersivePreviewController, ImmersivePreviewMode } from "../xr/immersive-preview-renderer.js";
 import { useEffectRunner } from "./runtime-bridge.js";
 
@@ -21,11 +25,13 @@ export function ImmersivePreviewPanel({
   spec,
   audience,
   label,
+  contentKey,
 }: {
   readonly mediaUrl: string | null;
   readonly spec: ImageSpatialSpec | null;
   readonly audience: AudienceInSpace;
   readonly label: string;
+  readonly contentKey: string;
 }) {
   const run = useEffectRunner();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -33,6 +39,7 @@ export function ImmersivePreviewPanel({
   const controller = useRef<ImmersivePreviewController | null>(null);
   const pendingEnd = useRef(false);
   const launchSerial = useRef(0);
+  const launchedContentKey = useRef<string | null>(null);
   const [capabilities, setCapabilities] = useState(INITIAL_CAPABILITIES);
   const [checking, setChecking] = useState(true);
   const [activeMode, setActiveMode] = useState<ImmersivePreviewMode | null>(null);
@@ -46,8 +53,12 @@ export function ImmersivePreviewPanel({
 
   useEffect(() => {
     let mounted = true;
-    void run(Effect.flatMap(ImmersivePreview, (service) => service.capabilities))
-      .then((next) => {
+    void run(
+      Effect.flatMap(ImmersivePreview, (service) =>
+        Effect.all({ capabilities: service.capabilities, prepared: service.prepare }),
+      ),
+    )
+      .then(({ capabilities: next }) => {
         if (!mounted) return;
         setCapabilities(next);
         setStatus(capabilitySummary(next));
@@ -72,11 +83,18 @@ export function ImmersivePreviewPanel({
     return () => window.removeEventListener("keydown", keyDown);
   }, [activeMode]);
 
+  useEffect(() => {
+    if (activeMode && launchedContentKey.current !== contentKey) stop();
+  }, [activeMode, contentKey]);
+
   function launch(mode: ImmersivePreviewMode) {
     const targetCanvas = canvas.current;
     const targetOverlay = overlay.current;
     if (!targetCanvas || !targetOverlay || !mediaUrl || !spec || activeMode) return;
     const serial = ++launchSerial.current;
+    launchedContentKey.current = contentKey;
+    const orientationPermission =
+      mode === "lookaround" ? requestLookaroundOrientationPermission() : Promise.resolve("unavailable" as const);
     pendingEnd.current = false;
     setActiveMode(mode);
     setScaleLabel(null);
@@ -96,6 +114,7 @@ export function ImmersivePreviewPanel({
           spec,
           audience,
           label,
+          orientationPermission,
           onReady: (next) => {
             if (serial !== launchSerial.current) {
               void next.end();
@@ -114,12 +133,16 @@ export function ImmersivePreviewPanel({
       ),
     )
       .catch((error: unknown) => {
-        if (serial === launchSerial.current) setStatus(errorMessage(error));
+        if (serial === launchSerial.current) {
+          setStatus(errorMessage(error));
+          if (document.fullscreenElement === targetOverlay) void document.exitFullscreen().catch(() => undefined);
+        }
       })
       .finally(() => {
         if (serial !== launchSerial.current) return;
         controller.current = null;
         pendingEnd.current = false;
+        launchedContentKey.current = null;
         setActiveMode(null);
         setSensorActive(false);
       });
@@ -148,21 +171,21 @@ export function ImmersivePreviewPanel({
           <ImmersiveModeButton
             label="Phone Lookaround"
             detail={capabilities.orientation ? "Sensor + touch" : "Touch view"}
-            available={!unavailableReason}
+            available={!checking && !unavailableReason}
             active={activeMode === "lookaround"}
             onClick={() => launch("lookaround")}
           />
           <ImmersiveModeButton
             label="Enter VR"
             detail="Quest / WebXR"
-            available={!unavailableReason && capabilities.vr}
+            available={!checking && !unavailableReason && capabilities.vr}
             active={activeMode === "immersive-vr"}
             onClick={() => launch("immersive-vr")}
           />
           <ImmersiveModeButton
             label="Place AR Model"
             detail="WebXR hit test"
-            available={!unavailableReason && capabilities.ar}
+            available={!checking && !unavailableReason && capabilities.ar}
             active={activeMode === "immersive-ar"}
             onClick={() => launch("immersive-ar")}
           />

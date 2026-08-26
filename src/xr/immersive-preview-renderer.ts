@@ -5,6 +5,8 @@ import { buildImmersiveCarrierMesh, immersiveArPlacement, immersiveVrModelMatrix
 
 export type ImmersivePreviewMode = "lookaround" | "immersive-vr" | "immersive-ar";
 
+export type OrientationPermissionState = "granted" | "denied" | "unavailable";
+
 export type ImmersivePreviewRendererInput = {
   readonly mode: ImmersivePreviewMode;
   readonly canvas: HTMLCanvasElement;
@@ -13,6 +15,7 @@ export type ImmersivePreviewRendererInput = {
   readonly spec: ImageSpatialSpec;
   readonly audience: AudienceInSpace;
   readonly label: string;
+  readonly orientationPermission: Promise<OrientationPermissionState>;
   readonly signal: AbortSignal;
   readonly onUpdate: (update: ImmersiveRendererUpdate) => void;
 };
@@ -29,10 +32,6 @@ export type ImmersivePreviewController = {
   readonly recenter: () => void;
 };
 
-type DeviceOrientationConstructor = typeof DeviceOrientationEvent & {
-  requestPermission?: () => Promise<"granted" | "denied">;
-};
-
 type WakeLockNavigator = Navigator & {
   readonly wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
 };
@@ -45,7 +44,6 @@ export async function startImmersivePreviewRenderer(
 }
 
 async function startLookaround(input: ImmersivePreviewRendererInput): Promise<ImmersivePreviewController> {
-  const permission = requestOrientationPermission();
   const renderer = await GlSpatialRenderer.create(
     input.canvas,
     input.mediaUrl,
@@ -53,7 +51,7 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
     input.audience,
     input.signal,
   );
-  const permissionState = await permission;
+  const permissionState = await input.orientationPermission;
   if (input.signal.aborted) {
     renderer.destroy();
     throw new DOMException("Immersive preview was interrupted.", "AbortError");
@@ -166,9 +164,11 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
   };
   frameId = requestAnimationFrame(render);
 
+  const abort = () => void end();
   const end = async () => {
     if (ended) return;
     ended = true;
+    input.signal.removeEventListener("abort", abort);
     cancelAnimationFrame(frameId);
     input.canvas.removeEventListener("pointerdown", pointerDown);
     input.canvas.removeEventListener("pointermove", pointerMove);
@@ -181,18 +181,27 @@ async function startLookaround(input: ImmersivePreviewRendererInput): Promise<Im
     if (document.fullscreenElement === input.overlayRoot) await document.exitFullscreen().catch(() => undefined);
     resolveFinished();
   };
-  input.signal.addEventListener("abort", () => void end(), { once: true });
+  input.signal.addEventListener("abort", abort, { once: true });
   return { finished, end, recenter };
 }
 
 async function startWebXr(input: ImmersivePreviewRendererInput): Promise<ImmersivePreviewController> {
   if (!navigator.xr) throw new Error("WebXR is not available in this browser.");
   const sessionMode: XRSessionMode = input.mode === "immersive-vr" ? "immersive-vr" : "immersive-ar";
-  const session = await navigator.xr.requestSession(sessionMode, {
-    requiredFeatures: ["local-floor"],
-    optionalFeatures: sessionMode === "immersive-ar" ? ["hit-test", "dom-overlay"] : ["dom-overlay"],
-    domOverlay: { root: input.overlayRoot },
-  });
+  const session = await navigator.xr.requestSession(
+    sessionMode,
+    sessionMode === "immersive-vr"
+      ? {
+          requiredFeatures: ["local-floor"],
+          optionalFeatures: ["dom-overlay"],
+          domOverlay: { root: input.overlayRoot },
+        }
+      : {
+          requiredFeatures: ["hit-test"],
+          optionalFeatures: ["dom-overlay"],
+          domOverlay: { root: input.overlayRoot },
+        },
+  );
   if (input.signal.aborted) {
     await session.end().catch(() => undefined);
     throw new DOMException("Immersive preview was interrupted.", "AbortError");
@@ -205,9 +214,13 @@ async function startWebXr(input: ImmersivePreviewRendererInput): Promise<Immersi
   const finished = new Promise<void>((resolve) => {
     resolveFinished = resolve;
   });
+  const abort = () => {
+    if (!ended) void session.end().catch(() => finish());
+  };
   const finish = () => {
     if (ended) return;
     ended = true;
+    input.signal.removeEventListener("abort", abort);
     if (frameId) session.cancelAnimationFrame(frameId);
     hitTestSource?.cancel();
     hitTestSource = null;
@@ -216,13 +229,7 @@ async function startWebXr(input: ImmersivePreviewRendererInput): Promise<Immersi
     resolveFinished();
   };
   session.addEventListener("end", finish, { once: true });
-  input.signal.addEventListener(
-    "abort",
-    () => {
-      if (!ended) void session.end().catch(() => finish());
-    },
-    { once: true },
-  );
+  input.signal.addEventListener("abort", abort, { once: true });
 
   try {
     renderer = await GlSpatialRenderer.create(input.canvas, input.mediaUrl, input.spec, input.audience, input.signal);
@@ -230,7 +237,9 @@ async function startWebXr(input: ImmersivePreviewRendererInput): Promise<Immersi
     await renderer.makeXrCompatible();
     const layer = new XRWebGLLayer(session, renderer.gl, { alpha: sessionMode === "immersive-ar", antialias: true });
     session.updateRenderState({ baseLayer: layer, depthNear: 0.02, depthFar: 240 });
-    const referenceSpace = await session.requestReferenceSpace("local-floor");
+    const referenceSpace = await session.requestReferenceSpace(
+      sessionMode === "immersive-vr" ? "local-floor" : "local",
+    );
     const ar = immersiveArPlacement(input.audience, input.spec);
     const arFallback = multiplyMatrices(translationMatrix(0, 0, -1.35), ar.modelMatrix);
     let arPlacedMatrix: Float32Array | null = null;
@@ -489,17 +498,6 @@ function compileShader(gl: WebGL2RenderingContext, type: number, source: string)
 function requiredResource<A>(resource: A | null, label: string): A {
   if (resource === null) throw new Error(`Could not create immersive ${label}.`);
   return resource;
-}
-
-async function requestOrientationPermission(): Promise<"granted" | "denied" | "unavailable"> {
-  if (typeof window === "undefined" || !("DeviceOrientationEvent" in window)) return "unavailable";
-  const constructor = window.DeviceOrientationEvent as DeviceOrientationConstructor;
-  if (!constructor.requestPermission) return "granted";
-  try {
-    return await constructor.requestPermission();
-  } catch {
-    return "denied";
-  }
 }
 
 function resizeCanvas(canvas: HTMLCanvasElement): void {

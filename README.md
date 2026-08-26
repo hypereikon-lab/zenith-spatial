@@ -19,6 +19,7 @@ Zenith supports multiple independent Compositions, but it is not a timeline, NLE
 - **React 19 + Vite** render the workstation. React subscribes through `useSyncExternalStore`, dispatches Effect programs, owns canvas/pointer wiring, and keeps only interaction-local UI state.
 - **Effect Schema** defines the portable project, composition, media, commit, take, generation, carrier, and API boundaries.
 - **Effect Platform Node** serves the production client and the generation API. Secrets, paid validation, confirmation grants, provider calls, durable job state, cancellation, and outputs remain server-side.
+- The optional private **ChatGPT Site Worker** runs the same React workbench with an Effect 3 request boundary. ChatGPT identity scopes a D1 project index and exact `.zenith` archives in R2; optimistic revisions prevent accidental cross-device overwrites.
 - **Pure TypeScript + TypeGPU/WGSL** retain geometry, projection transforms, plate composition, guide kernels, shader parity, and deterministic reducers without Effect wrappers.
 - A scoped **WebXR + WebGL 2 presentation adapter** reuses the portable carrier mesh and projection UV contracts. It is loaded only when Immersive Preview starts; the primary workstation renderer remains TypeGPU/WebGPU.
 
@@ -34,6 +35,7 @@ The main source boundaries are:
 | `src/media`                   | Image normalization, PNG provenance, downloads, and archive container                                                           |
 | `src/inpaint`                 | Projection-aware generation prompt compiler; inpaint is a strategy, not an application room                                     |
 | `server`                      | Effect Platform Node API, paid confirmation, jobs, provider boundary, persistence, and static serving                           |
+| `site-worker`, `drizzle`      | Private Sites identity boundary, D1 project revisions, R2 archive storage, and its SQL migration                                |
 
 See [projection carriers](docs/projection-carriers.md) for the carrier and rendering contracts.
 
@@ -43,7 +45,7 @@ A Composition owns ordered source assets, one editable Plate Draft, immutable Pl
 
 Project files are binary `.zenith` archives containing the schema-validated document plus exact media sidecars. Loading replaces runtime media atomically and restores the workspace. The loader also includes a one-way importer for the former schema-version 17 JSON/archive format; new saves always use the current domain.
 
-Generated PNG outputs retain the pinned spatial contract in an uncompressed `zenith.spatial.v1` `iTXt` chunk without re-encoding image pixels.
+Plate Draft and Plate Commit PNGs carry a `zenith.plate.v1` `iTXt` payload with their exact draft, carrier geometry, spatial specification, horizon/guide state, stable project/composition identity, and commit provenance. Importing one can restore the pinned authoring geometry independently of the currently selected carrier. Generated Image Takes retain the pinned generation contract in `zenith.spatial.v1`. Metadata chunks are inserted without re-encoding image pixels. General-purpose image editors may strip ancillary PNG chunks, so a `.zenith` archive remains the authoritative complete project format.
 
 ## Local development
 
@@ -93,6 +95,26 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+## Private ChatGPT Site
+
+The Site is a second delivery mode for the same Vite/React workstation, not a fork of the product. It keeps Compose, exact Plate Commit/download, imported Image Takes, spatial Review, Audience in Space, Phone Lookaround, and capability-detected WebXR. After ChatGPT sign-in, **Site** in the header can save, load, revision, and delete private projects. Each remote revision is the normal binary `.zenith` archive, so media bytes and multi-composition integrity are identical to local Save/Open.
+
+```sh
+npm ci
+npm run dev:site
+```
+
+The local Sites adapter runs at `http://127.0.0.1:5173` and provides a local test sign-in. A production Site is HTTPS and owner-only by default, which also supplies the secure context required by supported orientation and WebXR modes.
+
+Build and package checks:
+
+```sh
+npm run build:site
+npm run preview:site
+```
+
+Paid Runway generation intentionally remains disabled in Site mode. The local Effect Platform Node mode retains the complete paid confirmation, input-digest, progress, cancellation, output, and recovery contract. The Worker must not claim hosted generation is configured until it has an equally durable job journal; local and imported Image Takes remain fully reviewable on the Site.
 
 ## Server configuration
 

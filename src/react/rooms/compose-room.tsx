@@ -22,8 +22,11 @@ import {
   carrierRasterForAspect,
   planarRoofProfile,
   projectionSpatialAnchors,
+  projectionSurfaceAngularHorizon,
+  projectionSurfaceHorizonCalibrationOffset,
   projectionSurfaceSummary,
   projectionSurfacePhysicalHorizon,
+  withProjectionSurfaceHorizonCalibration,
   type GenerationAspectPreset,
   type PlanarRoofAnchor,
   type ProjectionSurface,
@@ -112,6 +115,7 @@ export function ComposeRoom() {
   const [invertCarrierMask, setInvertCarrierMask] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [horizonCalibrationKey, setHorizonCalibrationKey] = useState<string | null>(null);
   const canvasStack = useRef<HTMLDivElement>(null);
   const plateInput = useRef<HTMLInputElement>(null);
   const gesture = useRef<ActiveGesture | null>(null);
@@ -119,6 +123,10 @@ export function ComposeRoom() {
   const sourceKey = draft.frame.plateLayers
     .map((layer) => `${layer.id}:${layer.source.assetId ?? "missing"}:${layer.visible}`)
     .join("|");
+  const currentHorizonCalibrationKey = `${snapshot.document.project.id}:${composition.id}:${draft.projectionMode}`;
+  const horizonCalibrationEnabled = horizonCalibrationKey === currentHorizonCalibrationKey;
+  const setHorizonCalibrationEnabled = (enabled: boolean) =>
+    setHorizonCalibrationKey(enabled ? currentHorizonCalibrationKey : null);
   const viewMode: PlateEditorViewMode = plateEditorViewDisabledReason(
     snapshot.document.workspace.viewMode,
     draft.projectionMode,
@@ -242,8 +250,9 @@ export function ComposeRoom() {
       viewport: { x: 0, y: 0, width: canvasSize.width, height: canvasSize.height },
       projectPhysicalDirection: adapter.projectPhysicalDirection,
       projectPhysicalSurfacePoint: adapter.projectPhysicalSurfacePoint,
+      editPhysicalHorizon: horizonCalibrationEnabled,
     });
-  }, [camera, canvasSize, draft, showCarrierMask, viewMode]);
+  }, [camera, canvasSize, draft, horizonCalibrationEnabled, showCarrierMask, viewMode]);
 
   const drawOverlay = useCallback(() => {
     if (!overlayCanvas || !previewInput) return;
@@ -958,10 +967,10 @@ export function ComposeRoom() {
               onPointerCancel={endPointer}
               onWheel={handleWheel}
             />
-            {projectedGuides.some((guide) => guide.handle) ? (
+            {projectedGuides.some((guide) => guide.editable && guide.handle) ? (
               <div className="projected-anchor-layer">
                 {projectedGuides.map((guide) =>
-                  guide.handle ? (
+                  guide.editable && guide.handle ? (
                     <button
                       key={guide.id}
                       type="button"
@@ -971,7 +980,11 @@ export function ComposeRoom() {
                         top: `${(guide.handle.y / Math.max(canvasSize.height, 1)) * 100}%`,
                       }}
                       aria-label={`Drag ${guide.label.toLowerCase()} on projected space, currently ${guide.value.toFixed(guide.unit === "meters" ? 2 : 1)} ${guide.unit}`}
-                      title="Drag the spatial anchor; observer pose and source-map allocation remain fixed"
+                      title={
+                        guide.id === "horizon"
+                          ? "Advanced physical-horizon calibration; image alignment and observer pose remain fixed"
+                          : "Drag the semantic field anchor; observer pose and image alignment remain fixed"
+                      }
                       onPointerDown={(event) => beginProjectedAnchor(event, guide.id)}
                       onPointerMove={handlePointerMove}
                       onPointerUp={endPointer}
@@ -1004,7 +1017,9 @@ export function ComposeRoom() {
               ? "Drag plates · handles scale/warp · top handle rotates"
               : viewMode === "audience-space"
                 ? "Drag to look · wheel walks · position is measured in meters"
-                : "Drag horizon handles · empty space orbits · wheel dollies"}
+                : horizonCalibrationEnabled
+                  ? "Advanced horizon calibration unlocked · empty space orbits · wheel dollies"
+                  : "Physical horizon is derived · empty space orbits · wheel dollies"}
           </span>
         </div>
       </div>
@@ -1156,6 +1171,8 @@ export function ComposeRoom() {
                 void run(changeProjection(mode)).catch((error: unknown) => reportError(error, "projection"))
               }
               onGeometryChange={applyProjectionGeometry}
+              horizonCalibrationEnabled={horizonCalibrationEnabled}
+              onHorizonCalibrationEnabledChange={setHorizonCalibrationEnabled}
             />
           </div>
         ) : (
@@ -1169,6 +1186,8 @@ export function ComposeRoom() {
                 void run(changeProjection(mode)).catch((error: unknown) => reportError(error, "projection"))
               }
               onGeometryChange={applyProjectionGeometry}
+              horizonCalibrationEnabled={horizonCalibrationEnabled}
+              onHorizonCalibrationEnabledChange={setHorizonCalibrationEnabled}
             />
           </div>
         )}
@@ -1220,10 +1239,14 @@ function CarrierFields({
   draft,
   onProjectionChange,
   onGeometryChange,
+  horizonCalibrationEnabled,
+  onHorizonCalibrationEnabledChange,
 }: {
   draft: PlateDraft;
   onProjectionChange: (mode: SourceProjectionMode) => void;
   onGeometryChange: (patch: Parameters<typeof changeProjectionGeometry>[0], compensatePlacements?: boolean) => void;
+  horizonCalibrationEnabled: boolean;
+  onHorizonCalibrationEnabledChange: (enabled: boolean) => void;
 }) {
   return (
     <div className="panel-section">
@@ -1265,6 +1288,8 @@ function CarrierFields({
         surface={draft.surface}
         onChange={(surface) => onGeometryChange({ surface })}
         onAnchorChange={(surface) => onGeometryChange({ surface }, false)}
+        horizonCalibrationEnabled={horizonCalibrationEnabled}
+        onHorizonCalibrationEnabledChange={onHorizonCalibrationEnabledChange}
       />
       <CarrierFieldAnchors
         mode={draft.projectionMode}
@@ -1275,7 +1300,7 @@ function CarrierFields({
         }
       />
       <NumberField
-        label="Semantic split"
+        label="Image semantic split"
         value={draft.guideSplit}
         min={0}
         max={1}
@@ -1283,7 +1308,7 @@ function CarrierFields({
         onChange={(value) => onGeometryChange({ guideSplit: value })}
       />
       <NumberField
-        label="Horizon split"
+        label="Image horizon split"
         value={draft.horizonSplit}
         min={0}
         max={1}
@@ -1337,11 +1362,15 @@ function SurfaceFields({
   surface,
   onChange,
   onAnchorChange,
+  horizonCalibrationEnabled,
+  onHorizonCalibrationEnabledChange,
 }: {
   mode: SourceProjectionMode;
   surface: ProjectionSurface;
   onChange: (surface: ProjectionSurface) => void;
   onAnchorChange: (surface: ProjectionSurface) => void;
+  horizonCalibrationEnabled: boolean;
+  onHorizonCalibrationEnabledChange: (enabled: boolean) => void;
 }) {
   if (surface.kind === "angular") {
     const anchors = surface.anchors ?? { semanticElevationDegrees: 45, horizonElevationDegrees: 0 };
@@ -1359,14 +1388,12 @@ function SurfaceFields({
           step={0.5}
           onChange={(value) => onAnchorChange({ ...surface, anchors: { ...anchors, semanticElevationDegrees: value } })}
         />
-        <NumberField
-          label="Horizon elevation"
-          value={anchors.horizonElevationDegrees}
-          suffix="°"
-          min={zenithOrdered ? domainMinimum : anchors.semanticElevationDegrees + 0.5}
-          max={zenithOrdered ? anchors.semanticElevationDegrees - 0.5 : domainMaximum}
-          step={0.5}
-          onChange={(value) => onAnchorChange({ ...surface, anchors: { ...anchors, horizonElevationDegrees: value } })}
+        <PhysicalHorizonModel
+          mode={mode}
+          surface={surface}
+          calibrationEnabled={horizonCalibrationEnabled}
+          onCalibrationEnabledChange={onHorizonCalibrationEnabledChange}
+          onChange={onAnchorChange}
         />
       </>
     );
@@ -1391,7 +1418,7 @@ function SurfaceFields({
           onChange={(value) => onChange({ ...surface, height: value })}
         />
         <NumberField
-          label="Observer Y"
+          label="Observer eye height"
           value={surface.eyeHeight}
           suffix="m"
           min={0.01}
@@ -1399,7 +1426,13 @@ function SurfaceFields({
           step={0.05}
           onChange={(value) => onChange({ ...surface, eyeHeight: value })}
         />
-        <PhysicalHorizonField surface={surface} onChange={onAnchorChange} />
+        <PhysicalHorizonModel
+          mode={mode}
+          surface={surface}
+          calibrationEnabled={horizonCalibrationEnabled}
+          onCalibrationEnabledChange={onHorizonCalibrationEnabledChange}
+          onChange={onAnchorChange}
+        />
       </>
     );
   }
@@ -1431,7 +1464,7 @@ function SurfaceFields({
           onChange={(value) => onChange({ ...surface, height: value })}
         />
         <NumberField
-          label="Observer Y"
+          label="Observer eye height"
           value={surface.eyeHeight}
           suffix="m"
           min={0.01}
@@ -1453,7 +1486,13 @@ function SurfaceFields({
           step={0.05}
           onChange={(value) => onChange({ ...surface, eyeZ: value })}
         />
-        <PhysicalHorizonField surface={surface} onChange={onAnchorChange} />
+        <PhysicalHorizonModel
+          mode={mode}
+          surface={surface}
+          calibrationEnabled={horizonCalibrationEnabled}
+          onCalibrationEnabledChange={onHorizonCalibrationEnabledChange}
+          onChange={onAnchorChange}
+        />
       </>
     );
   }
@@ -1476,7 +1515,7 @@ function SurfaceFields({
         onChange={(value) => onChange({ ...surface, width: value })}
       />
       <NumberField
-        label="Observer Y"
+        label="Observer eye height"
         value={surface.eyeHeight}
         suffix="m"
         min={0.1}
@@ -1497,7 +1536,13 @@ function SurfaceFields({
         step={0.05}
         onChange={(value) => onChange({ ...surface, eyeZ: value })}
       />
-      <PhysicalHorizonField surface={surface} onChange={onAnchorChange} />
+      <PhysicalHorizonModel
+        mode={mode}
+        surface={surface}
+        calibrationEnabled={horizonCalibrationEnabled}
+        onCalibrationEnabledChange={onHorizonCalibrationEnabledChange}
+        onChange={onAnchorChange}
+      />
       <HallRoofProfileEditor surface={surface} onChange={onChange} />
     </>
   );
@@ -1608,31 +1653,105 @@ function HallRoofProfileEditor({
   );
 }
 
-function PhysicalHorizonField({
+function PhysicalHorizonModel({
+  mode,
   surface,
+  calibrationEnabled,
+  onCalibrationEnabledChange,
   onChange,
 }: {
-  surface: Exclude<ProjectionSurface, { kind: "angular" }>;
+  mode: SourceProjectionMode;
+  surface: ProjectionSurface;
+  calibrationEnabled: boolean;
+  onCalibrationEnabledChange: (enabled: boolean) => void;
   onChange: (surface: ProjectionSurface) => void;
 }) {
-  const horizon = projectionSurfacePhysicalHorizon(surface);
-  if (!horizon) return null;
+  const angular = surface.kind === "angular" ? projectionSurfaceAngularHorizon(surface) : null;
+  const physical = projectionSurfacePhysicalHorizon(surface);
+  const offset = projectionSurfaceHorizonCalibrationOffset(surface);
+  const bounds = physicalHorizonCalibrationBounds(mode, surface);
+  const unit = angular ? "°" : "m";
+  const value = angular?.elevationDegrees ?? physical!.height;
+  const derived = angular?.derivedElevationDegrees ?? physical!.derivedHeight;
+  const calibrated = Math.abs(offset) > 0.000_001;
   return (
-    <NumberField
-      label="Texture horizon"
-      value={horizon.height}
-      suffix="m"
-      min={0.01}
-      max={Math.max(0.01, horizon.upperLimit - 0.01)}
-      step={0.01}
-      onChange={(value) =>
-        onChange({
-          ...surface,
-          anchors: { horizonHeight: clamp(value, 0.01, Math.max(0.01, horizon.upperLimit - 0.01)) },
-        })
-      }
-    />
+    <div className="physical-horizon-model">
+      <div className="field-row physical-horizon-readout">
+        <span>Physical horizon</span>
+        <output>
+          {round(value)} {unit} · {calibrated ? "calibrated" : "derived"}
+        </output>
+      </div>
+      <p className="technical-note">
+        {angular
+          ? "Derived at observer level (0°) for angular carriers."
+          : `Derived from the projection observer at ${round(derived)} m above the venue floor.`}
+      </p>
+      <details
+        className="horizon-calibration"
+        open={calibrationEnabled || undefined}
+        onToggle={(event) => {
+          if (!event.currentTarget.open) onCalibrationEnabledChange(false);
+        }}
+      >
+        <summary>Advanced physical calibration</summary>
+        <div className="horizon-calibration-body">
+          <p>
+            Use only for a tilted installation or surveyed mismatch. Image-horizon alignment remains separate below.
+          </p>
+          <label className="calibration-unlock">
+            <input
+              type="checkbox"
+              checked={calibrationEnabled}
+              onChange={(event) => onCalibrationEnabledChange(event.currentTarget.checked)}
+            />
+            Unlock manual calibration
+          </label>
+          {calibrationEnabled ? (
+            <>
+              <NumberField
+                label="Calibration offset"
+                value={offset}
+                suffix={unit}
+                min={bounds.minimum}
+                max={bounds.maximum}
+                step={angular ? 0.5 : 0.01}
+                onChange={(nextOffset) =>
+                  onChange(
+                    withProjectionSurfaceHorizonCalibration(surface, clamp(nextOffset, bounds.minimum, bounds.maximum)),
+                  )
+                }
+              />
+              <button
+                className="button ghost full"
+                type="button"
+                disabled={!calibrated}
+                onClick={() => onChange(withProjectionSurfaceHorizonCalibration(surface, 0))}
+              >
+                Reset to derived horizon
+              </button>
+            </>
+          ) : null}
+        </div>
+      </details>
+    </div>
   );
+}
+
+function physicalHorizonCalibrationBounds(
+  mode: SourceProjectionMode,
+  surface: ProjectionSurface,
+): { minimum: number; maximum: number } {
+  if (surface.kind === "angular") {
+    const semantic = projectionSpatialAnchors(surface).semanticElevationDegrees;
+    if (mode === "nadir-180") return { minimum: semantic + 0.5, maximum: 0 };
+    return { minimum: mode === "zenith-230" ? -25 : 0, maximum: semantic - 0.5 };
+  }
+  const horizon = projectionSurfacePhysicalHorizon(surface)!;
+  return {
+    minimum: 0.01 - horizon.derivedHeight,
+    maximum: Math.max(0.01, horizon.upperLimit - 0.01) - horizon.derivedHeight,
+  };
 }
 
 function zeroCorners() {

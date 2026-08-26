@@ -11,7 +11,7 @@ Zenith treats a projection image as a spatial contract, not as an ordinary camer
 | Numerical compiler                  | `src/geometry/projection-kernel-parameters.ts`                       | One explicit typed projection value from mode, raster, guide allocation, and measured surface.       |
 | Portable transforms                 | `src/kernels/projection`, `src/kernels/plates`, `src/kernels/guides` | CPU-callable and WGSL-resolvable forward/inverse, placement, warp, fitting, and carrier coordinates. |
 | Raster-allocation normalization     | `src/geometry/source-guide-semantics.ts`                             | Mode-aware seam, cap, and carrier split constraints.                                                 |
-| Spatial texture anchors             | `src/lib/shared/contracts/projection-authoring.ts`                   | Projected semantic/horizon locations independent from observer pose and raster allocation.           |
+| Physical and semantic anchors       | `src/lib/shared/contracts/projection-authoring.ts`                   | Derived physical horizon, explicit calibration, and the independent semantic field location.         |
 | GPU execution                       | `src/plates/*shader.ts`, `src/graphics/typegpu/*pipeline.ts`         | Typed raster/texture entry points and pipelines that resolve the portable kernels through TypeGPU.   |
 | Image handoff                       | `src/plates/plate-guide-shader.ts`, `src/inpaint/inpaint-prompts.ts` | The committed guide raster and model language derived from the same explicit projection value.       |
 | Per-image history                   | `ImageSpatialSpec` on immutable Plate Commits and Image Takes        | The projection, fit, guides, orientation, and target geometry of that exact image.                   |
@@ -22,7 +22,7 @@ Zenith treats a projection image as a spatial contract, not as an ordinary camer
 
 Surface geometry and image raster geometry are independent contracts:
 
-- `ProjectionSurface` currently represents an observer-centred angular surface, a measured rectangular room (`width`, `depth`, `height`, `eyeX`, `eyeHeight`, `eyeZ`), a measured circular cylinder (`radius`, `height`, `eyeHeight`), or an extruded profiled hall (`length`, `width`, ordered `roofProfile`, and observer coordinates). It also owns projected texture anchors: angular semantic/horizon elevations or an absolute venue-space texture-horizon height. These anchors are not the observer pose and are not source-raster percentages. Each pair of neighbouring hall-profile anchors is one exact planar roof face.
+- `ProjectionSurface` currently represents an observer-centred angular surface, a measured rectangular room (`width`, `depth`, `height`, `eyeX`, `eyeHeight`, `eyeZ`), a measured circular cylinder (`radius`, `height`, `eyeHeight`), or an extruded profiled hall (`length`, `width`, ordered `roofProfile`, and observer coordinates). The physical horizon is derived at `0°` for angular surfaces and at `eyeHeight` above the venue floor for measured surfaces. Serialized horizon anchors preserve the resolved value for old archives and portable PNGs; any difference from the derived value is an explicit calibration offset. The independent semantic anchor and source-raster splits retain their own responsibilities. Each pair of neighbouring hall-profile anchors is one exact planar roof face.
 - `CarrierRaster` selects an exact image-authoring aspect and pixel size. Zenith supports 21:9, 16:9, 4:3, 1:1, 3:4, and 9:16. Raster aspect changes sampling allocation; it does not change the room's physical proportions.
 - GPT Image rasters are multiples of 16, keep every edge below 3840 px, remain at or below 3:1, stay inside the documented total-pixel range, and do not exceed the guide's 3,686,400-pixel experimental threshold. Paid preflight rejects an arbitrary image size that does not match one of the exact shared families instead of silently choosing the nearest ratio.
 
@@ -39,13 +39,13 @@ Paid image preflight decodes the committed input and returned output and require
 
 The current measured-room authoring contract is deliberately exact about the surfaces it represents: rectangular prisms, centred circular cylinders, and one extruded piecewise-planar hall shell. A general irregular polygonal room, curved freeform wall, roof varying along the extrusion axis, off-axis cylinder, projector lens, warp mesh, or blend mask still needs a calibrated surface/mesh contract; Zenith does not pretend that a few dimensions describe those venues.
 
-`Audience in Space` is a separate inspection contract. It derives a perspective camera from a movable human position in venue coordinates (`X`, `Z`, and eye height in metres), while the projection observer remains the origin used by carrier transforms. CAVE, hall, and cylinder previews use their measured dimensions directly. Angular carriers are dimensionless by definition, so the workspace supplies a physical dome radius solely for scale simulation. Moving this audience pose never rewrites the measured surface, spatial anchors, source allocation, Plate placement, commits, or pixels.
+`Audience in Space` is a separate inspection contract. It derives a perspective camera from a movable human position in venue coordinates (`X`, `Z`, and eye height in metres), while the persistent projection observer remains the origin used by carrier transforms and the source of the authored physical horizon. CAVE, hall, and cylinder previews use their measured dimensions directly. Angular carriers are dimensionless by definition, so the workspace supplies a physical dome radius solely for scale simulation. Moving this inspection audience pose never rewrites the measured surface, physical horizon, source allocation, Plate placement, commits, or pixels.
 
 ## Supported topologies
 
 ### Circular fisheye
 
-`zenith-180`, `zenith-230`, and `nadir-180` are circular equidistant maps. Radius encodes polar angle and azimuth is continuous around the center. Pixels outside the source circle are protected black exterior. Independent semantic and horizon elevations pin the authored field to physical dome latitude; the 230-degree profile may place the horizon below the 180-degree rim and retain content below it.
+`zenith-180`, `zenith-230`, and `nadir-180` are circular equidistant maps. Radius encodes polar angle and azimuth is continuous around the center. Pixels outside the source circle are protected black exterior. The physical horizon is observer level at `0°`; a non-zero elevation is explicitly an installation calibration. The semantic field elevation remains artist-authored, while the image-horizon split independently allocates pixels around the physical latitude. The 230-degree profile may retain content below the 180-degree rim.
 
 On a non-square carrier raster, an angular fisheye remains a true circle in pixel space with diameter equal to the short edge. The extra long-axis area stays protected black. Changing 1:1 to 21:9 therefore allocates a wider generation canvas without falsely stretching dome directions into an ellipse.
 
@@ -53,7 +53,7 @@ On a non-square carrier raster, an angular fisheye remains a true circle in pixe
 
 `cave-270` is a normalized square-perimeter topology for one floor and four continuous walls. The center region is the floor; moving outward crosses the floor/wall seam and traverses the wall height; angle around the center selects the room perimeter. It is not a panorama, room render, cube map, or domemaster. The normalized topology may be sampled into any supported rectangular carrier raster; that stretches sampling density, not the measured room.
 
-The CPU map intersects a ray from the configured observer with the floor or nearest wall. Width, depth, height, and observer offsets are profile inputs instead of shader constants. The inverse maps the physical hit back to the same source coordinate. The texture-horizon plane has its own absolute height above the venue floor; moving it changes the texture-to-wall mapping without moving the observer or shell. A separate carrier percentage decides how many source pixels are allocated on either side of that plane.
+The CPU map intersects a ray from the configured observer with the floor or nearest wall. Width, depth, height, and observer offsets are profile inputs instead of shader constants. The inverse maps the physical hit back to the same source coordinate. The physical-horizon plane follows observer eye height above the venue floor. Advanced calibration may offset that plane for a surveyed installation mismatch without pretending it is a normal artistic control. A separate image-horizon percentage decides how many source pixels are allocated on either side of the resolved plane.
 
 ### Profiled planar hall shell carrier
 
@@ -62,7 +62,7 @@ The CPU map intersects a ray from the configured observer with the floor or near
 - the carrier center is the roof point directly above the observer;
 - the inner square contains the complete authored roof profile;
 - the inner boundary is the continuous roof-to-wall seam;
-- the outer carrier band traverses upper wall → authored texture horizon → lower wall;
+- the outer carrier band traverses upper wall → resolved physical horizon → lower wall;
 - the raster edge is the physical bottom edge of the walls and remains the open boundary toward the omitted floor;
 - traversal around the center follows the complete wall perimeter, preserving all four corners.
 
@@ -78,13 +78,14 @@ The model-facing Plate guide is a continuous positional field, not a drawing of 
 
 Exact rings, spokes, seams, roof-profile breaks, and surface edges are derived isolines. They belong only to the toggleable Guides/Edge editor overlays and physical review diagnostics. On the hall Plate Map, Edge derives each roof-break contour by mapping the source sample back onto the measured roof and comparing its world-space `z` against the active profile anchors. Clean view, committed Plate Sketch handoff, GPU composition output, and inpaint input contain no baked construction lines. This separation lets an artist inspect topology precisely without asking the image model to erase a grid it should never have received.
 
-There are therefore five deliberately separate concepts:
+There are therefore six deliberately separate concepts:
 
 1. The measured surface defines physical geometry.
 2. The observer pose defines the origin used by projection rays and physical preview.
-3. Spatial texture anchors pin semantic/horizon field locations onto the dome or measured volume.
-4. Carrier splits allocate source resolution between topological seams and those spatial anchors.
-5. Optional contours expose exact locations for human inspection.
+3. The physical horizon is derived from observer level and carrier geometry.
+4. An optional advanced calibration offsets that physical guide for surveyed installations.
+5. Semantic anchors and image splits allocate the artistic field and source resolution independently.
+6. Optional contours expose exact locations for human inspection.
 
 ### Circular cylinder continuity carrier
 
@@ -94,7 +95,7 @@ There are therefore five deliberately separate concepts:
 - a small positive center disk contains the complete floor or ceiling cap;
 - the cap boundary joins continuously to the wall annulus;
 - radius through the annulus traverses the full wall height;
-- an editable texture-horizon height pins the wall field independently from observer eye height;
+- the physical horizon follows observer eye height, with only an explicit advanced calibration offset;
 - the normalized outer circle is the opposite wall edge;
 - the exterior corners remain pure black.
 
@@ -106,7 +107,7 @@ The cap radius cannot be zero. At zero, every point on the physical cap would co
 
 ## Cylinder mapping
 
-Let the normalized source coordinate relative to its center be `(x, y)`, with radius `rho = sqrt(x² + y²)` and azimuth `a = atan2(x, y)`. Let `c` be the cap raster split, `h` the source horizon split, and `H` the authored physical texture-horizon height.
+Let the normalized source coordinate relative to its center be `(x, y)`, with radius `rho = sqrt(x² + y²)` and azimuth `a = atan2(x, y)`. Let `c` be the cap raster split, `h` the image horizon split, and `H` the resolved physical horizon height: observer eye height plus any explicit calibration offset.
 
 For `rho <= c`, the source maps linearly across the cap:
 
@@ -117,7 +118,7 @@ surface = (sin(a) * capRadius, capY, cos(a) * capRadius)
 
 For `rho > c`, the point lies on the wall at the cylinder radius. Source radius maps piecewise linearly to physical vertical traversal `t`; the first interval maps `c..h` to cap edge..`H`, and the second maps `h..1` from `H` to the opposite edge. The inverse applies the opposite piecewise map. Observer height affects the ray origin; `H` affects texture placement; `h` affects sampling density.
 
-Ray-to-surface evaluation tests both the cap plane and cylinder wall and chooses the nearest valid positive intersection. Tests cover UV → surface → UV, direction → surface → UV, both cap orientations, editable room proportions, the horizon field anchor, circular-domain rejection, and cap singularity prevention.
+Ray-to-surface evaluation tests both the cap plane and cylinder wall and chooses the nearest valid positive intersection. Tests cover UV → surface → UV, direction → surface → UV, both cap orientations, editable room proportions, derived and calibrated physical horizons, circular-domain rejection, and cap singularity prevention.
 
 ### Unwrapped cylinder-wall carrier
 
@@ -127,11 +128,11 @@ Ray-to-surface evaluation tests both the cap plane and cylinder wall and chooses
 - source Y traverses the wall from ceiling at the top edge to floor at the bottom edge;
 - the left and right source edges are identified as the same physical vertical seam;
 - every source pixel belongs to the wall, with no circular mask or protected corner exterior;
-- the editable lower/upper allocation pins the authored texture-horizon height while redistributing rows below and above it.
+- the editable lower/upper image allocation maps rows below and above the derived physical horizon.
 
 Zenith governs this model-facing carrier at 21:9: 2912 × 1248. That width is used for circumferential evidence instead of spending a square image on wall height. The topology, aspect selector, generated prompt, and paid preflight share this policy. Older non-21:9 cylinder-wall Plates remain readable as historical state, but Zenith requires the artist to rebuild and recommit the Plate at 21:9 before another paid image generation.
 
-For normalized source coordinates `(u, v)`, azimuth is `a = (u - 0.5) * 2π`. The bottom-to-top carrier traversal is `c = 1 - v`. A piecewise-linear map sends the configured carrier horizon split to the authored texture-horizon height fraction. The surface point is then:
+For normalized source coordinates `(u, v)`, azimuth is `a = (u - 0.5) * 2π`. The bottom-to-top carrier traversal is `c = 1 - v`. A piecewise-linear map sends the configured image-horizon split to the resolved physical-horizon height fraction. The surface point is then:
 
 ```text
 surface = (sin(a) * cylinderRadius, wallY(c), cos(a) * cylinderRadius)
@@ -145,7 +146,7 @@ This topology uses wide rasters much more efficiently for wall content. Its trad
 
 ## Plate compensation
 
-A Plate placement stores semantic polar position, not an accidental pixel offset. When an artist changes a topological seam, cap split, horizon split, or carrier raster, Zenith remaps the Plate through physical space and back through the new allocation. The artwork therefore stays on the same projected location while source pixels are redistributed. Moving a projected semantic/horizon anchor is intentionally different: it changes the texture-to-surface mapping, so Zenith leaves Plate coordinates, observer pose, and camera untouched.
+A Plate placement stores semantic polar position, not an accidental pixel offset. When an artist changes a topological seam, cap split, image-horizon split, carrier raster, measured geometry, or observer height, Zenith remaps the Plate through physical space and back through the new allocation. The artwork therefore stays on the same projected location while source pixels are redistributed. Moving the semantic anchor or an explicitly unlocked physical-horizon calibration is intentionally different: it changes the field or texture-to-surface mapping, so Zenith leaves Plate coordinates, observer pose, and camera untouched.
 
 Changing zenith-oriented to nadir-oriented meaning also flips the vertical plate orientation. This avoids forcing the artist to repair a horizon move or top/bottom reversal later in finishing.
 

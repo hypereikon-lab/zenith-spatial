@@ -13,8 +13,12 @@ import {
   gptImage2RasterIssues,
   normalizeProjectionSurfaceForMode,
   planarRoofProfile,
+  projectionSurfaceAngularHorizon,
+  projectionSurfaceHorizonCalibrationOffset,
   projectionSurfacePhysicalHorizon,
   projectionSurfaceSummary,
+  rebaseProjectionSurfaceHorizonForObserverChange,
+  withProjectionSurfaceHorizonCalibration,
 } from "./projection-authoring.js";
 
 describe("projection authoring contracts", () => {
@@ -67,10 +71,12 @@ describe("projection authoring contracts", () => {
     });
     expect(projectionSurfacePhysicalHorizon(surface)).toEqual({
       height: 1.4,
+      derivedHeight: 1.4,
+      calibrationOffset: 0,
       upperLimit: 3.5,
       reference: "venue-floor",
     });
-    expect(projectionSurfaceSummary(surface)).toContain("anchor 1.4 m");
+    expect(projectionSurfaceSummary(surface)).toContain("physical horizon 1.4 m");
   });
 
   test("rejects observer coordinates outside the measured room", () => {
@@ -121,9 +127,73 @@ describe("projection authoring contracts", () => {
     expect(parse(DoubleGableProjectionSurfaceSchema, profiled)).toEqual(profiled);
     expect(projectionSurfacePhysicalHorizon(profiled)).toEqual({
       height: 1.65,
+      derivedHeight: 1.65,
+      calibrationOffset: 0,
       upperLimit: 8.4,
       reference: "venue-floor",
     });
+  });
+
+  test("treats portable legacy horizon anchors as explicit calibration", () => {
+    const angular = withProjectionSurfaceHorizonCalibration(
+      { kind: "angular", anchors: { semanticElevationDegrees: 45, horizonElevationDegrees: 0 } },
+      4.5,
+    );
+    expect(angular).toEqual({
+      kind: "angular",
+      anchors: { semanticElevationDegrees: 45, horizonElevationDegrees: 4.5 },
+    });
+    expect(projectionSurfaceAngularHorizon(angular as Extract<typeof angular, { kind: "angular" }>)).toEqual({
+      elevationDegrees: 4.5,
+      derivedElevationDegrees: 0,
+      calibrationOffsetDegrees: 4.5,
+      reference: "observer-level",
+    });
+
+    const measured = {
+      kind: "box-room" as const,
+      width: 6,
+      depth: 4,
+      height: 3.5,
+      eyeHeight: 1.4,
+      eyeX: 0,
+      eyeZ: 0,
+      anchors: { horizonHeight: 2.2 },
+    };
+    expect(projectionSurfaceHorizonCalibrationOffset(measured)).toBeCloseTo(0.8);
+    const horizon = projectionSurfacePhysicalHorizon(measured)!;
+    expect(horizon).toMatchObject({
+      height: 2.2,
+      derivedHeight: 1.4,
+    });
+    expect(horizon.calibrationOffset).toBeCloseTo(0.8);
+  });
+
+  test("rebases the derived horizon with observer eye height while preserving calibration", () => {
+    const previous = {
+      kind: "cylinder" as const,
+      radius: 3,
+      height: 5,
+      eyeHeight: 1.6,
+      anchors: { horizonHeight: 1.85 },
+    };
+    expect(
+      rebaseProjectionSurfaceHorizonForObserverChange(previous, {
+        ...previous,
+        eyeHeight: 1.9,
+      }),
+    ).toEqual({
+      ...previous,
+      eyeHeight: 1.9,
+      anchors: { horizonHeight: 2.15 },
+    });
+    expect(
+      rebaseProjectionSurfaceHorizonForObserverChange(previous, {
+        ...previous,
+        eyeHeight: 1.9,
+        anchors: { horizonHeight: 2.4 },
+      }),
+    ).toMatchObject({ eyeHeight: 1.9, anchors: { horizonHeight: 2.4 } });
   });
 
   test("treats an explicit planar profile as authoritative over stale legacy gable fields", () => {

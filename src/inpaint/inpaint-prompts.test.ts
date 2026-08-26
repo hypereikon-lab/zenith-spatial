@@ -474,7 +474,7 @@ describe("projection inpaint prompts", () => {
     expect(cavePrompt).toContain("exactly 2560 × 1440 pixels (16:9, full-frame carrier)");
     expect(cavePrompt).toContain("width 8.5 m, depth 5.25 m, height 3.75 m");
     expect(cavePrompt).toContain(
-      "authored texture-horizon height 1.62 m above the venue floor; observer pose Y 1.62 m, X -0.4 m, Z 0.8 m",
+      "physical horizon 1.62 m above the venue floor, derived from observer eye height 1.62 m with no calibration offset; observer pose X -0.4 m, Z 0.8 m",
     );
     expect(cavePrompt).toContain("square-perimeter room carrier spans the complete rectangular raster");
     expect(cavePrompt).not.toMatch(/square (image|raster)/i);
@@ -486,7 +486,7 @@ describe("projection inpaint prompts", () => {
     });
     expect(cylinderPrompt).toContain("exactly 1440 × 2560 pixels (9:16, full-frame carrier)");
     expect(cylinderPrompt).toContain(
-      "radius 3.2 m, diameter 6.4 m, height 6.4 m; authored texture-horizon height 1.7 m above the venue floor; observer pose Y 1.7 m",
+      "radius 3.2 m, diameter 6.4 m, height 6.4 m; physical horizon 1.7 m above the venue floor, derived from observer eye height 1.7 m with no calibration offset",
     );
     expect(cylinderPrompt).toContain("full-frame ellipse touching all four edge midpoints");
     expect(cylinderPrompt).toContain("do not replace it with a min-side pixel circle");
@@ -501,6 +501,26 @@ describe("projection inpaint prompts", () => {
     expect(prompt).toContain("true pixel circle whose diameter is the raster's short edge");
     expect(prompt).toContain("protected black margins along the long axis");
     expect(prompt).toContain("do not stretch it into an ellipse");
+  });
+
+  it("names advanced physical-horizon calibration separately from image allocation", () => {
+    const prompt = inpaintPromptForProjection("cave-270", 0.4, 0.72, {
+      raster: carrierRasterForAspect("16:9"),
+      surface: {
+        kind: "box-room",
+        width: 6,
+        depth: 4,
+        height: 3.5,
+        eyeHeight: 1.6,
+        eyeX: 0,
+        eyeZ: 0,
+        anchors: { horizonHeight: 1.85 },
+      },
+    });
+
+    expect(prompt).toContain("physical horizon 1.85 m above the venue floor");
+    expect(prompt).toContain("explicit +0.25 m calibration offset");
+    expect(prompt).toContain("eye-level/horizon breakpoint at 72% of the source-map radius");
   });
 
   it("replaces only known obsolete generated prompt scaffolds", () => {

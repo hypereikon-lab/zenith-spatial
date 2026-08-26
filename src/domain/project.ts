@@ -9,6 +9,7 @@ import {
   cloneProjectionSurface,
   defaultProjectionSurface,
   normalizeProjectionSurfaceForMode,
+  rebaseProjectionSurfaceHorizonForObserverChange,
   type CarrierRaster,
   type ProjectionSurface,
 } from "../lib/shared/contracts/projection-authoring.js";
@@ -520,8 +521,12 @@ export function updateProjectionGeometry(
       patch.horizonSplit ?? (modeChanged ? defaults.horizonSplit : draft.horizonSplit),
     );
     const crossesAngularPole = modeChanged && (projectionMode === "nadir-180" || draft.projectionMode === "nadir-180");
+    const requestedSurface =
+      patch.surface ?? (crossesAngularPole ? defaultProjectionSurface(projectionMode) : draft.surface);
     const surface = normalizeProjectionSurfaceForMode(
-      patch.surface ?? (crossesAngularPole ? defaultProjectionSurface(projectionMode) : draft.surface),
+      patch.surface && !modeChanged
+        ? rebaseProjectionSurfaceHorizonForObserverChange(draft.surface, requestedSurface)
+        : requestedSurface,
       projectionMode,
     );
     const raster = cloneCarrierRaster(patch.raster ?? draft.raster);

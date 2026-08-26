@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { sourceMapPointToDirection } from "../geometry/source-projection.js";
 
 import {
   addImageTake,
@@ -179,6 +180,64 @@ describe("Zenith portable domain", () => {
       anchors: { semanticElevationDegrees: 52, horizonElevationDegrees: 7 },
     });
     expect(after.frame.plateLayers[0]!.placement).toEqual(placement);
+  });
+
+  test("derives a measured physical horizon from observer height and preserves explicit calibration", () => {
+    const initial = createInitialZenithDocument({ now: NOW });
+    const cave = updateProjectionGeometry(initial, { projectionMode: "cave-270" }, NOW);
+    const caveDraft = selectedComposition(cave).plateDraft;
+    expect(caveDraft.surface.kind).toBe("box-room");
+    if (caveDraft.surface.kind !== "box-room") throw new Error("expected box-room surface");
+
+    const calibrated = updateProjectionGeometry(
+      cave,
+      {
+        surface: {
+          ...caveDraft.surface,
+          anchors: { horizonHeight: caveDraft.surface.eyeHeight + 0.3 },
+        },
+      },
+      NOW,
+      { compensatePlacements: false },
+    );
+    const before = selectedComposition(calibrated).plateDraft;
+    const beforePlacement = structuredClone(before.frame.plateLayers[0]!.placement);
+    const beforeDirection = sourceMapPointToDirection(
+      beforePlacement,
+      before.projectionMode,
+      before.raster.width,
+      before.raster.height,
+      1,
+      before.guideSplit,
+      before.horizonSplit,
+      before.surface,
+    );
+    expect(before.surface.kind).toBe("box-room");
+    if (before.surface.kind !== "box-room") throw new Error("expected box-room surface");
+
+    const changed = updateProjectionGeometry(calibrated, { surface: { ...before.surface, eyeHeight: 2.4 } }, NOW);
+    const after = selectedComposition(changed).plateDraft;
+    expect(after.surface.kind).toBe("box-room");
+    if (after.surface.kind !== "box-room") throw new Error("expected box-room surface");
+    expect(after.surface.anchors?.horizonHeight).toBeCloseTo(2.7);
+    expect(after.surface.anchors!.horizonHeight - after.surface.eyeHeight).toBeCloseTo(0.3);
+
+    const afterPlacement = after.frame.plateLayers[0]!.placement;
+    const afterDirection = sourceMapPointToDirection(
+      afterPlacement,
+      after.projectionMode,
+      after.raster.width,
+      after.raster.height,
+      1,
+      after.guideSplit,
+      after.horizonSplit,
+      after.surface,
+    );
+    expect(beforeDirection).not.toBeNull();
+    expect(afterDirection).not.toBeNull();
+    for (let index = 0; index < 3; index += 1) {
+      expect(afterDirection![index]).toBeCloseTo(beforeDirection![index], 6);
+    }
   });
 });
 

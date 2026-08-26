@@ -84,12 +84,12 @@ export const PlanarRoofAnchorSchema = Schema.Struct({
 export const AngularSpatialAnchorsSchema = Schema.Struct({
   /** Artist-authored upper semantic field stop on the dome, in world elevation. */
   semanticElevationDegrees: finiteNumberSchema.pipe(Schema.between(-89.9, 89.9)),
-  /** Artist-authored viewing-horizon field stop on the dome, in world elevation. */
+  /** Resolved physical horizon. Values away from 0 degrees are explicit calibration. */
   horizonElevationDegrees: finiteNumberSchema.pipe(Schema.between(-89.9, 89.9)),
 });
 
 export const PhysicalSpatialAnchorsSchema = Schema.Struct({
-  /** Absolute venue-space height of the texture horizon above the floor. */
+  /** Resolved physical horizon height. Differences from eyeHeight are explicit calibration. */
   horizonHeight: positiveNumberSchema,
 });
 
@@ -295,11 +295,25 @@ export type AngularSpatialAnchors = Schema.Schema.Type<typeof AngularSpatialAnch
 export type PhysicalSpatialAnchors = Schema.Schema.Type<typeof PhysicalSpatialAnchorsSchema>;
 
 export type ProjectionSurfacePhysicalHorizon = {
-  /** World-space height of the authored texture-horizon plane above the venue floor. */
+  /** World-space height of the resolved physical-horizon plane above the venue floor. */
   height: number;
+  /** Observer-derived height before an optional calibration offset is applied. */
+  derivedHeight: number;
+  /** Explicit installation calibration relative to the observer-derived plane. */
+  calibrationOffset: number;
   /** Highest valid value before the plane exits the authored venue shell. */
   upperLimit: number;
   reference: "venue-floor";
+};
+
+export type ProjectionSurfaceAngularHorizon = {
+  /** Resolved physical-horizon elevation. */
+  elevationDegrees: number;
+  /** Angular carriers derive their physical horizon at world elevation 0 degrees. */
+  derivedElevationDegrees: 0;
+  /** Explicit installation calibration relative to 0 degrees. */
+  calibrationOffsetDegrees: number;
+  reference: "observer-level";
 };
 export type CarrierRaster = Schema.Schema.Type<typeof CarrierRasterSchema>;
 
@@ -405,6 +419,63 @@ export function projectionSpatialAnchors(surface: ProjectionSurface): AngularSpa
     return surface.anchors || { semanticElevationDegrees: 45, horizonElevationDegrees: 0 };
   }
   return surface.anchors || { horizonHeight: surface.eyeHeight };
+}
+
+/**
+ * Physical horizon derived from the projection observer and carrier.
+ *
+ * Existing serialized anchor values remain the resolved value for archive and
+ * PNG compatibility. Their difference from the derived value is interpreted as
+ * an explicit installation calibration, rather than a second free horizon.
+ */
+export function projectionSurfaceAngularHorizon(surface: AngularProjectionSurface): ProjectionSurfaceAngularHorizon {
+  const elevationDegrees = projectionSpatialAnchors(surface).horizonElevationDegrees;
+  return {
+    elevationDegrees,
+    derivedElevationDegrees: 0,
+    calibrationOffsetDegrees: elevationDegrees,
+    reference: "observer-level",
+  };
+}
+
+export function projectionSurfaceHorizonCalibrationOffset(surface: ProjectionSurface): number {
+  if (surface.kind === "angular") return projectionSurfaceAngularHorizon(surface).calibrationOffsetDegrees;
+  return projectionSpatialAnchors(surface).horizonHeight - surface.eyeHeight;
+}
+
+/** Applies an advanced physical-horizon calibration without changing its portable shape. */
+export function withProjectionSurfaceHorizonCalibration(
+  surface: ProjectionSurface,
+  calibrationOffset: number,
+): ProjectionSurface {
+  if (surface.kind === "angular") {
+    const anchors = projectionSpatialAnchors(surface);
+    return {
+      ...surface,
+      anchors: {
+        ...anchors,
+        horizonElevationDegrees: calibrationOffset,
+      },
+    };
+  }
+  return {
+    ...surface,
+    anchors: { horizonHeight: surface.eyeHeight + calibrationOffset },
+  };
+}
+
+/**
+ * Keeps the current calibration offset when an editor changes the measured
+ * observer height without explicitly changing the serialized horizon anchor.
+ */
+export function rebaseProjectionSurfaceHorizonForObserverChange(
+  previous: ProjectionSurface,
+  next: ProjectionSurface,
+): ProjectionSurface {
+  if (previous.kind === "angular" || next.kind === "angular" || previous.kind !== next.kind) return next;
+  if (Math.abs(previous.eyeHeight - next.eyeHeight) <= 0.000_000_1) return next;
+  if (previous.anchors?.horizonHeight !== next.anchors?.horizonHeight) return next;
+  return withProjectionSurfaceHorizonCalibration(next, projectionSurfaceHorizonCalibrationOffset(previous));
 }
 
 /** Stable comparison key for venue/observer geometry, excluding texture anchors. */
@@ -533,38 +604,44 @@ export function gptImage2RasterIssues(
 
 export function projectionSurfaceSummary(surface: ProjectionSurface): string {
   if (surface.kind === "box-room") {
-    return `${formatMeters(surface.width)} × ${formatMeters(surface.depth)} × ${formatMeters(surface.height)} room · anchor ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} · observer Y ${formatMeters(surface.eyeHeight)}, X ${formatMeters(surface.eyeX)}, Z ${formatMeters(surface.eyeZ)}`;
+    return `${formatMeters(surface.width)} × ${formatMeters(surface.depth)} × ${formatMeters(surface.height)} room · physical horizon ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} · observer Y ${formatMeters(surface.eyeHeight)}, X ${formatMeters(surface.eyeX)}, Z ${formatMeters(surface.eyeZ)}`;
   }
   if (surface.kind === "double-gable-room") {
     const profile = planarRoofProfile(surface);
     const peak = Math.max(...profile.map((anchor) => anchor.height));
-    return `${formatMeters(surface.length)} × ${formatMeters(surface.width)} profiled hall · anchor ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} · observer Y ${formatMeters(surface.eyeHeight)} · ${profile.length - 1} roof planes · peak ${formatMeters(peak)} · no floor`;
+    return `${formatMeters(surface.length)} × ${formatMeters(surface.width)} profiled hall · physical horizon ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} · observer Y ${formatMeters(surface.eyeHeight)} · ${profile.length - 1} roof planes · peak ${formatMeters(peak)} · no floor`;
   }
   if (surface.kind === "cylinder") {
-    return `Ø${formatMeters(surface.radius * 2)} × ${formatMeters(surface.height)} cylinder · anchor ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} · observer Y ${formatMeters(surface.eyeHeight)}`;
+    return `Ø${formatMeters(surface.radius * 2)} × ${formatMeters(surface.height)} cylinder · physical horizon ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} · observer Y ${formatMeters(surface.eyeHeight)}`;
   }
   const anchors = projectionSpatialAnchors(surface);
-  return `observer-centred angular surface · semantic ${Number(anchors.semanticElevationDegrees.toFixed(1))}° · horizon ${Number(anchors.horizonElevationDegrees.toFixed(1))}°`;
+  return `observer-centred angular surface · semantic ${Number(anchors.semanticElevationDegrees.toFixed(1))}° · physical horizon ${Number(anchors.horizonElevationDegrees.toFixed(1))}°`;
 }
 
 /**
- * Describes the authored texture-horizon plane independently from source-map allocation.
+ * Describes the resolved physical-horizon plane independently from image allocation.
  *
  * `surface.eyeHeight` remains the observer pose. `scene.horizonSplit` decides
- * where this plane is allocated in the carrier raster. Neither value is a
- * substitute for the authored world-space anchor height.
+ * where this plane is allocated in the carrier raster. Serialized anchors keep
+ * the resolved value so legacy calibration and immutable image metadata remain exact.
  */
 export function projectionSurfacePhysicalHorizon(surface: ProjectionSurface): ProjectionSurfacePhysicalHorizon | null {
   if (surface.kind === "box-room" || surface.kind === "cylinder") {
+    const height = projectionSpatialAnchors(surface).horizonHeight;
     return {
-      height: projectionSpatialAnchors(surface).horizonHeight,
+      height,
+      derivedHeight: surface.eyeHeight,
+      calibrationOffset: height - surface.eyeHeight,
       upperLimit: surface.height,
       reference: "venue-floor",
     };
   }
   if (surface.kind === "double-gable-room") {
+    const height = projectionSpatialAnchors(surface).horizonHeight;
     return {
-      height: projectionSpatialAnchors(surface).horizonHeight,
+      height,
+      derivedHeight: surface.eyeHeight,
+      calibrationOffset: height - surface.eyeHeight,
       upperLimit: Math.min(...planarRoofProfile(surface).map((anchor) => anchor.height)),
       reference: "venue-floor",
     };

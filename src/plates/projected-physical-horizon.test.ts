@@ -33,6 +33,7 @@ describe("projected spatial anchors", () => {
         viewport,
         projectPhysicalDirection: adapter.projectPhysicalDirection,
         projectPhysicalSurfacePoint: adapter.projectPhysicalSurfacePoint,
+        editPhysicalHorizon: true,
       })[0];
     });
 
@@ -41,6 +42,27 @@ describe("projected spatial anchors", () => {
     expect(guides[0].segments).toEqual(guides[1].segments);
     expect(guides[0].handle).toEqual(guides[1].handle);
     expect(projectedSpatialAnchorHandleHit(guides[0].handle, guides)?.id).toBe("horizon");
+  });
+
+  test("renders the derived guide without exposing a normal editing hit target", () => {
+    const adapter = createPlateEditorProjectionAdapter({
+      mode: "cave-room",
+      sourceProjectionMode: "cave-270",
+      camera: defaultPlateEditorCamera("cave-270", surface),
+      rect: viewport,
+      projectionSurface: surface,
+    });
+    const guide = buildProjectedSpatialAnchorGuides({
+      surface,
+      mode: "cave-270",
+      viewport,
+      projectPhysicalDirection: adapter.projectPhysicalDirection,
+      projectPhysicalSurfacePoint: adapter.projectPhysicalSurfacePoint,
+    })[0];
+
+    expect(guide.editable).toBe(false);
+    expect(guide.handle).not.toBeNull();
+    expect(projectedSpatialAnchorHandleHit(guide.handle, [guide])).toBeNull();
   });
 
   test("resolves projected volume dragging back to absolute venue height", () => {

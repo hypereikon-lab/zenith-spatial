@@ -15,6 +15,7 @@ import {
   normalizeProjectionSurfaceForMode,
   planarRoofProfile,
   projectionSpatialAnchors,
+  projectionSurfaceHorizonCalibrationOffset,
   type CarrierRaster,
   type ProjectionSurface,
 } from "../lib/shared/contracts/projection-authoring.js";
@@ -754,10 +755,10 @@ function carrierRasterSamplingClause(
 
 function projectionSurfacePromptClause(surface: ProjectionSurface): string {
   if (surface.kind === "box-room") {
-    return `Measured box-room geometry: width ${formatMeters(surface.width)}, depth ${formatMeters(surface.depth)}, height ${formatMeters(surface.height)}; authored texture-horizon height ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} above the venue floor; observer pose Y ${formatMeters(surface.eyeHeight)}, X ${formatMeters(surface.eyeX)}, Z ${formatMeters(surface.eyeZ)}.`;
+    return `Measured box-room geometry: width ${formatMeters(surface.width)}, depth ${formatMeters(surface.depth)}, height ${formatMeters(surface.height)}; physical horizon ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} above the venue floor, derived from observer eye height ${formatMeters(surface.eyeHeight)}${horizonCalibrationPromptClause(surface)}; observer pose X ${formatMeters(surface.eyeX)}, Z ${formatMeters(surface.eyeZ)}.`;
   }
   if (surface.kind === "cylinder") {
-    return `Measured cylinder geometry: radius ${formatMeters(surface.radius)}, diameter ${formatMeters(surface.radius * 2)}, height ${formatMeters(surface.height)}; authored texture-horizon height ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} above the venue floor; observer pose Y ${formatMeters(surface.eyeHeight)}.`;
+    return `Measured cylinder geometry: radius ${formatMeters(surface.radius)}, diameter ${formatMeters(surface.radius * 2)}, height ${formatMeters(surface.height)}; physical horizon ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} above the venue floor, derived from observer eye height ${formatMeters(surface.eyeHeight)}${horizonCalibrationPromptClause(surface)}.`;
   }
   if (surface.kind === "double-gable-room") {
     const anchors = planarRoofProfile(surface);
@@ -767,14 +768,26 @@ function projectionSurfacePromptClause(surface: ProjectionSurface): string {
           `${anchor.role} at ${formatPromptPercent(anchor.position)}% cross-hall / ${formatMeters(anchor.height)}`,
       )
       .join(", ");
-    return `Measured planar-profile hall geometry: length ${formatMeters(surface.length)}, width ${formatMeters(surface.width)}; ordered roof anchors ${profile}; authored texture-horizon height ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} above the venue floor; observer pose Y ${formatMeters(surface.eyeHeight)}, X ${formatMeters(surface.eyeX)}, Z ${formatMeters(surface.eyeZ)}; four walls and ${anchors.length - 1} exact roof planes, explicitly no floor.`;
+    return `Measured planar-profile hall geometry: length ${formatMeters(surface.length)}, width ${formatMeters(surface.width)}; ordered roof anchors ${profile}; physical horizon ${formatMeters(projectionSpatialAnchors(surface).horizonHeight)} above the venue floor, derived from observer eye height ${formatMeters(surface.eyeHeight)}${horizonCalibrationPromptClause(surface)}; observer pose X ${formatMeters(surface.eyeX)}, Z ${formatMeters(surface.eyeZ)}; four walls and ${anchors.length - 1} exact roof planes, explicitly no floor.`;
   }
   const anchors = projectionSpatialAnchors(surface);
-  return `Physical carrier: observer-centred angular projection surface; authored semantic elevation ${Number(anchors.semanticElevationDegrees.toFixed(2))} degrees and viewing-horizon elevation ${Number(anchors.horizonElevationDegrees.toFixed(2))} degrees.`;
+  return `Physical carrier: observer-centred angular projection surface; authored semantic elevation ${Number(anchors.semanticElevationDegrees.toFixed(2))} degrees; physical horizon ${Number(anchors.horizonElevationDegrees.toFixed(2))} degrees, derived from observer level at 0 degrees${horizonCalibrationPromptClause(surface)}.`;
+}
+
+function horizonCalibrationPromptClause(surface: ProjectionSurface): string {
+  const offset = projectionSurfaceHorizonCalibrationOffset(surface);
+  if (Math.abs(offset) <= 0.000_001) return " with no calibration offset";
+  const unit = surface.kind === "angular" ? "degrees" : "m";
+  return ` with an explicit ${formatSigned(offset)} ${unit} calibration offset`;
 }
 
 function formatMeters(value: number): string {
   return `${Number(value.toFixed(3))} m`;
+}
+
+function formatSigned(value: number): string {
+  const rounded = Number(value.toFixed(3));
+  return `${rounded > 0 ? "+" : ""}${rounded}`;
 }
 
 function formatPromptPercent(value: number): string {

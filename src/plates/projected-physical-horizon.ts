@@ -11,6 +11,8 @@ export type ProjectedSpatialAnchorId = "semantic" | "horizon";
 export type ProjectedSpatialAnchorGuide = {
   id: ProjectedSpatialAnchorId;
   label: string;
+  editable: boolean;
+  status: "authored" | "derived" | "calibrated";
   value: number;
   unit: "degrees" | "meters";
   minimum: number;
@@ -28,6 +30,7 @@ export function buildProjectedSpatialAnchorGuides({
   viewport,
   projectPhysicalDirection,
   projectPhysicalSurfacePoint,
+  editPhysicalHorizon = false,
   sampleCount = 180,
 }: {
   surface: ProjectionSurface;
@@ -35,6 +38,8 @@ export function buildProjectedSpatialAnchorGuides({
   viewport: Rect;
   projectPhysicalDirection: (direction: Vec3) => Point2D | null;
   projectPhysicalSurfacePoint: (point: Vec3) => Point2D | null;
+  /** Physical horizon handles unlock only inside explicit advanced calibration. */
+  editPhysicalHorizon?: boolean;
   sampleCount?: number;
 }): ProjectedSpatialAnchorGuide[] {
   if (surface.kind === "angular") {
@@ -46,6 +51,8 @@ export function buildProjectedSpatialAnchorGuides({
       buildAngularGuide({
         id: "semantic",
         label: semanticFirst ? "Sky field" : "Floor field",
+        editable: true,
+        status: "authored",
         elevationDegrees: anchors.semanticElevationDegrees,
         minimum: semanticFirst ? anchors.horizonElevationDegrees + 0.5 : domainMinimum,
         maximum: semanticFirst ? domainMaximum : anchors.horizonElevationDegrees - 0.5,
@@ -56,7 +63,9 @@ export function buildProjectedSpatialAnchorGuides({
       }),
       buildAngularGuide({
         id: "horizon",
-        label: "Viewing horizon",
+        label: "Physical horizon",
+        editable: editPhysicalHorizon,
+        status: Math.abs(anchors.horizonElevationDegrees) > 0.000_001 ? "calibrated" : "derived",
         elevationDegrees: anchors.horizonElevationDegrees,
         minimum: semanticFirst ? domainMinimum : anchors.semanticElevationDegrees + 0.5,
         maximum: semanticFirst ? anchors.semanticElevationDegrees - 0.5 : domainMaximum,
@@ -74,7 +83,9 @@ export function buildProjectedSpatialAnchorGuides({
   return [
     buildGuideFromProjectedPoints({
       id: "horizon",
-      label: "Texture horizon",
+      label: "Physical horizon",
+      editable: editPhysicalHorizon,
+      status: Math.abs(horizon.calibrationOffset) > 0.000_001 ? "calibrated" : "derived",
       value: horizon.height,
       unit: "meters",
       minimum: 0.01,
@@ -94,7 +105,7 @@ export function buildProjectedPhysicalHorizonGuide({
   projectPhysicalDirection,
   sampleCount = 180,
 }: {
-  horizon: { height: number; upperLimit: number };
+  horizon: { height: number; upperLimit: number; calibrationOffset?: number };
   viewport: Rect;
   projectPhysicalDirection: (direction: Vec3) => Point2D | null;
   sampleCount?: number;
@@ -106,7 +117,9 @@ export function buildProjectedPhysicalHorizonGuide({
   });
   return buildGuideFromProjectedPoints({
     id: "horizon",
-    label: "Texture horizon",
+    label: "Physical horizon",
+    editable: true,
+    status: Math.abs(horizon.calibrationOffset ?? 0) > 0.000_001 ? "calibrated" : "derived",
     value: horizon.height,
     unit: "meters",
     minimum: 0.01,
@@ -124,7 +137,11 @@ export function projectedSpatialAnchorHandleHit(
   hitRadius = 24,
 ): ProjectedSpatialAnchorGuide | null {
   if (!point) return null;
-  return guides.find((guide) => guide.handle && squaredDistance(point, guide.handle) <= hitRadius * hitRadius) ?? null;
+  return (
+    guides.find(
+      (guide) => guide.editable && guide.handle && squaredDistance(point, guide.handle) <= hitRadius * hitRadius,
+    ) ?? null
+  );
 }
 
 export function projectedPhysicalHorizonHandleHit(
@@ -138,6 +155,8 @@ export function projectedPhysicalHorizonHandleHit(
 function buildAngularGuide({
   id,
   label,
+  editable,
+  status,
   elevationDegrees,
   minimum,
   maximum,
@@ -148,6 +167,8 @@ function buildAngularGuide({
 }: {
   id: ProjectedSpatialAnchorId;
   label: string;
+  editable: boolean;
+  status: ProjectedSpatialAnchorGuide["status"];
   elevationDegrees: number;
   minimum: number;
   maximum: number;
@@ -166,6 +187,8 @@ function buildAngularGuide({
   return buildGuideFromProjectedPoints({
     id,
     label,
+    editable,
+    status,
     value: elevationDegrees,
     unit: "degrees",
     minimum,
@@ -223,6 +246,8 @@ function measuredHorizonLoop(
 function buildGuideFromProjectedPoints({
   id,
   label,
+  editable,
+  status,
   value,
   unit,
   minimum,
@@ -234,6 +259,8 @@ function buildGuideFromProjectedPoints({
 }: {
   id: ProjectedSpatialAnchorId;
   label: string;
+  editable: boolean;
+  status: ProjectedSpatialAnchorGuide["status"];
   value: number;
   unit: "degrees" | "meters";
   minimum: number;
@@ -265,7 +292,7 @@ function buildGuideFromProjectedPoints({
     if (!nearest) return point;
     return squaredDistance(point, target) < squaredDistance(nearest, target) ? point : nearest;
   }, null);
-  return { id, label, value, unit, minimum, maximum, segments, handle };
+  return { id, label, editable, status, value, unit, minimum, maximum, segments, handle };
 }
 
 function squaredDistance(left: Point2D, right: Point2D): number {

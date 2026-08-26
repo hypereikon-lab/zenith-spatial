@@ -7,6 +7,8 @@ Zenith is a local spatial-image authoring instrument for fulldome and other imme
 3. **Generate** from that exact commit, with explicit paid confirmation when Runway is configured, or import an Image Take locally.
 4. **Review** a Plate Commit or Image Take as exact pixels or through its pinned spatial geometry.
 
+The **physical horizon** is derived rather than freely authored: angular carriers use observer level at `0°`; CAVE, measured hall, and cylinder carriers use the projection observer's eye height above the venue floor. Compose keeps that guide visible and edits the measured observer height directly. A non-zero deviation is available only as an explicit advanced installation calibration. **Align image horizon** is a separate Plate-map control that changes where image pixels are allocated around the physical guide and compensates Plate placement through physical space.
+
 Compose and Review include an **Audience in Space** view: a perspective POV from a movable person whose X/Z position, eye height, facing, and field of view are expressed in meters. Measured rooms use their authored dimensions; angular carriers receive a workspace-only physical dome radius. Audience movement is inspection state and never changes Plate placement or projection mapping.
 
 Review also exposes **Immersive Preview** from the same pinned spatial specification. Phone Lookaround uses orientation sensors when permission is available and keeps touch drag as a universal fallback. Compatible WebXR headsets enter the carrier at 1:1 scale from the authored audience X/Z/facing; the physical headset supplies head height and local movement. Compatible AR devices place a bounded carrier scale model using hit testing. XR poses, placement candidates, frame loops, and controller state are runtime-only and are never written into the project.
@@ -45,7 +47,7 @@ A Composition owns ordered source assets, one editable Plate Draft, immutable Pl
 
 Project files are binary `.zenith` archives containing the schema-validated document plus exact media sidecars. Loading replaces runtime media atomically and restores the workspace. The loader also includes a one-way importer for the former schema-version 17 JSON/archive format; new saves always use the current domain.
 
-Plate Draft and Plate Commit PNGs carry a `zenith.plate.v1` `iTXt` payload with their exact draft, carrier geometry, spatial specification, horizon/guide state, stable project/composition identity, and commit provenance. Importing one can restore the pinned authoring geometry independently of the currently selected carrier. Generated Image Takes retain the pinned generation contract in `zenith.spatial.v1`. Metadata chunks are inserted without re-encoding image pixels. General-purpose image editors may strip ancillary PNG chunks, so a `.zenith` archive remains the authoritative complete project format.
+Plate Draft and Plate Commit PNGs carry a `zenith.plate.v1` `iTXt` payload with their exact draft, carrier geometry, spatial specification, derived physical horizon, optional calibration, image-horizon alignment, stable project/composition identity, and commit provenance. Importing one can restore the pinned authoring geometry independently of the currently selected carrier. Generated Image Takes retain the pinned generation contract in `zenith.spatial.v1`. Metadata chunks are inserted without re-encoding image pixels. General-purpose image editors may strip ancillary PNG chunks, so a `.zenith` archive remains the authoritative complete project format.
 
 ## Local development
 

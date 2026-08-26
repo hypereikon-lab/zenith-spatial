@@ -88,15 +88,17 @@ function drawProjectedSpatialAnchor(context: CanvasRenderingContext2D, guide: Pr
   context.setLineDash([]);
   if (guide.handle) {
     context.fillStyle = "rgba(4, 10, 14, 0.94)";
-    context.lineWidth = 3;
+    context.lineWidth = guide.editable ? 3 : 2;
     context.beginPath();
-    context.arc(guide.handle.x, guide.handle.y, 12, 0, Math.PI * 2);
+    context.arc(guide.handle.x, guide.handle.y, guide.editable ? 12 : 5, 0, Math.PI * 2);
     context.fill();
     context.stroke();
-    context.beginPath();
-    context.moveTo(guide.handle.x - 5, guide.handle.y);
-    context.lineTo(guide.handle.x + 5, guide.handle.y);
-    context.stroke();
+    if (guide.editable) {
+      context.beginPath();
+      context.moveTo(guide.handle.x - 5, guide.handle.y);
+      context.lineTo(guide.handle.x + 5, guide.handle.y);
+      context.stroke();
+    }
 
     context.shadowBlur = 3;
     context.fillStyle = "rgba(226, 248, 252, 0.96)";
@@ -104,7 +106,7 @@ function drawProjectedSpatialAnchor(context: CanvasRenderingContext2D, guide: Pr
     context.textBaseline = "middle";
     const unit = guide.unit === "meters" ? "M" : "°";
     context.fillText(
-      `${guide.label.toUpperCase()} ${guide.value.toFixed(guide.unit === "meters" ? 2 : 1)} ${unit}`,
+      `${guide.label.toUpperCase()} ${guide.value.toFixed(guide.unit === "meters" ? 2 : 1)} ${unit} · ${guide.status.toUpperCase()}`,
       guide.handle.x + 19,
       guide.handle.y,
     );

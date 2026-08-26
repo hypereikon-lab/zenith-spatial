@@ -1,5 +1,10 @@
 import { describe, expect, test } from "vitest";
-import { carrierRasterForAspect, defaultProjectionSurface } from "../lib/shared/contracts/projection-authoring.js";
+import {
+  carrierRasterForAspect,
+  defaultProjectionSurface,
+  projectionSurfaceHorizonCalibrationOffset,
+  withProjectionSurfaceHorizonCalibration,
+} from "../lib/shared/contracts/projection-authoring.js";
 import { createInitialZenithDocument, defaultImageSpatialSpec, selectedComposition } from "../domain/project.js";
 import type { ImageGenerationProvenance } from "../domain/schema.js";
 import {
@@ -56,6 +61,19 @@ describe("Zenith PNG spatial provenance", () => {
 
     expect(readZenithPlatePngMetadata(second)).toEqual(nextMetadata);
     expect(second.length).toBeLessThan(first.length + JSON.stringify(nextMetadata).length + 200);
+  });
+
+  test("keeps legacy resolved horizon anchors as portable calibration metadata", () => {
+    const metadata = plateMetadata("cave-270");
+    const calibratedSurface = withProjectionSurfaceHorizonCalibration(metadata.draft.surface, 0.27);
+    metadata.draft.surface = calibratedSurface;
+    metadata.spatialSpec.surface = structuredClone(calibratedSurface);
+
+    const embedded = embedZenithPlatePngMetadata(dataUrlBytes(ONE_PIXEL_PNG), metadata);
+    const restored = readZenithPlatePngMetadata(embedded)!;
+
+    expect(restored).toEqual(metadata);
+    expect(projectionSurfaceHorizonCalibrationOffset(restored.draft.surface)).toBeCloseTo(0.27);
   });
 
   test("rejects bytes that only claim to be PNG", () => {

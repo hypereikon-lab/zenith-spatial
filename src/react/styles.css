@@ -1303,6 +1303,69 @@ input[type="range"] {
   white-space: nowrap;
 }
 
+.carrier-anchor-heading small {
+  color: var(--faint);
+  font-size: 7px;
+  line-height: 1.45;
+  text-transform: none;
+}
+
+.physical-horizon-model {
+  border-top: 1px solid #202428;
+}
+
+.physical-horizon-model .physical-horizon-readout {
+  border-top: 0;
+}
+
+.physical-horizon-readout output {
+  color: var(--cyan);
+  font:
+    550 8px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  text-transform: uppercase;
+}
+
+.physical-horizon-model > .technical-note {
+  margin: 0 0 8px;
+}
+
+.horizon-calibration {
+  border: 1px solid #30353a;
+  background: #111416;
+}
+
+.horizon-calibration summary {
+  padding: 7px;
+  color: var(--muted);
+  font-size: 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.horizon-calibration-body {
+  display: grid;
+  gap: 7px;
+  padding: 0 7px 7px;
+}
+
+.horizon-calibration-body > p {
+  margin: 0;
+  color: var(--faint);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.calibration-unlock {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--amber);
+  font-size: 8px;
+}
+
 .carrier-anchor-rail {
   position: relative;
   height: 18px;

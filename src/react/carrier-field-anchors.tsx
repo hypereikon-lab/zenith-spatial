@@ -75,15 +75,16 @@ export function CarrierFieldAnchors({
   }
 
   return (
-    <div className="carrier-anchor-control" aria-label="Carrier field anchor controls">
+    <div className="carrier-anchor-control" aria-label="Image horizon alignment controls">
       <div className="carrier-anchor-heading">
-        <span>Carrier field anchors</span>
+        <span>Align image horizon</span>
         <strong>{breakpoints.map((item) => `${item.label} ${formatPercent(item.radius)}`).join(" · ")}</strong>
+        <small>Allocates Plate pixels against the physical guide; it does not move the observer.</small>
       </div>
       <div
         className="carrier-anchor-rail"
         role="group"
-        aria-label="Carrier field anchor rail"
+        aria-label="Image field alignment rail"
         onPointerDown={handleRailPointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={end}

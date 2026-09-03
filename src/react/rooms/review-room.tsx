@@ -31,6 +31,7 @@ import { reviewMediaFilesFromList } from "../../media/browser-image-files.js";
 import { downloadBlob } from "../../media/canvas-utils.js";
 import {
   captureSpatialTileAtlas,
+  FULLDOME_MASTER_DIMENSION,
   reconstructSpatialTileFiles,
   spatialTileOverlapDegrees,
 } from "../../media/spatial-tile-workflow.js";
@@ -73,7 +74,7 @@ export function ReviewRoom() {
   const [spatialStatus, setSpatialStatus] = useState(
     "Export six clean squares, upscale each one, then bring all six back.",
   );
-  const [spatialTileSize, setSpatialTileSize] = useState(512);
+  const [spatialTileSize, setSpatialTileSize] = useState(1024);
   const [lastTileManifest, setLastTileManifest] = useState<SpatialTileAtlasManifest | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   const mediaInput = useRef<HTMLInputElement>(null);
@@ -314,18 +315,25 @@ export function ReviewRoom() {
     setSpatialProcessing("reconstruct");
     setSpatialProgress(0);
     try {
-      const result = await reconstructSpatialTileFiles(files, lastTileManifest, (update) => {
-        setSpatialProgress(update.progress);
-        setSpatialStatus(update.status);
-        setStatus(update.status);
-      });
+      const result = await reconstructSpatialTileFiles(
+        files,
+        lastTileManifest,
+        (update) => {
+          setSpatialProgress(update.progress);
+          setSpatialStatus(update.status);
+          setStatus(update.status);
+        },
+        spec?.surface.kind === "angular"
+          ? { width: FULLDOME_MASTER_DIMENSION, height: FULLDOME_MASTER_DIMENSION }
+          : undefined,
+      );
       const reconstructed = new File([result.image], result.filename, {
         type: "image/png",
         lastModified: Date.now(),
       });
       await run(importReviewMedia(reconstructed));
       setSpatialStatus(
-        `${result.scale.toFixed(2)}× master added to Review · ${(result.coverage * 100).toFixed(1)}% carrier coverage.`,
+        `${result.spatialSpec.targetWidth}×${result.spatialSpec.targetHeight} master added to Review · ${result.scale.toFixed(2)}× processed tiles · ${(result.coverage * 100).toFixed(1)}% carrier coverage.`,
       );
       setStatus("Spatial master reconstructed with exposure compensation and Laplacian pyramid blending.");
     } catch (error) {
@@ -758,6 +766,15 @@ export function ReviewRoom() {
                           {spatialTileOverlapDegrees(110, spec.surface.kind === "angular" ? 72 : 90)}° for pyramid
                           blending.
                         </p>
+                        {spec.surface.kind === "angular" ? (
+                          <div className="spatial-output-contract">
+                            <span>Final domemaster</span>
+                            <strong>
+                              {FULLDOME_MASTER_DIMENSION} × {FULLDOME_MASTER_DIMENSION}
+                            </strong>
+                            <small>Exact delivery raster, independent from the external tile upscale factor.</small>
+                          </div>
+                        ) : null}
                         <label className="field-stack">
                           <span>Crop resolution</span>
                           <select
@@ -765,9 +782,9 @@ export function ReviewRoom() {
                             disabled={spatialProcessing !== null}
                             onChange={(event) => setSpatialTileSize(Number(event.currentTarget.value))}
                           >
-                            <option value={512}>512 × 512 · balanced</option>
+                            <option value={512}>512 × 512 · light</option>
                             <option value={768}>768 × 768 · detailed</option>
-                            <option value={1024}>1024 × 1024 · heavy</option>
+                            <option value={1024}>1024 × 1024 · recommended for 4K</option>
                           </select>
                         </label>
                         <button
@@ -803,8 +820,9 @@ export function ReviewRoom() {
                         ) : null}
                         <output>{spatialStatus}</output>
                         <small>
-                          The ZIP also includes a reference atlas and manifest. Select the six processed PNGs together;
-                          Zenith restores their geometry with exposure matching and Laplacian pyramid blending.
+                          For the 4K domemaster workflow, upscale every exported square to 1920 × 1920, preserve its
+                          filename, then select all six processed PNGs together. Zenith restores their geometry with
+                          exposure matching and Laplacian pyramid blending.
                         </small>
                       </div>
                     </>

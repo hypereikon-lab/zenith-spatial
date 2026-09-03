@@ -992,6 +992,33 @@ select {
     monospace;
 }
 
+.spatial-output-contract {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.25rem 0.75rem;
+  align-items: baseline;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--cyan) 30%, var(--line));
+  background: color-mix(in srgb, var(--cyan) 8%, transparent);
+}
+
+.spatial-output-contract > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.spatial-output-contract > strong {
+  color: var(--text);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.85rem;
+}
+
+.spatial-output-contract > small {
+  grid-column: 1 / -1;
+}
+
 .spatial-upscale-panel output {
   min-height: 25px;
   padding: 6px 7px;

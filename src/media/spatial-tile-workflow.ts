@@ -70,6 +70,11 @@ export type SpatialTileProgress = {
   readonly status: string;
 };
 
+export type SpatialTileOutputTarget = {
+  readonly width: number;
+  readonly height: number;
+};
+
 type IdentifiedSpatialTileFile = {
   readonly id: SpatialTileDescriptor["id"];
   readonly file: File;
@@ -96,6 +101,7 @@ const DEFAULT_PADDING = 20;
 const PYRAMID_LEVELS = 5;
 const MAX_OUTPUT_PIXELS = 36_000_000;
 const MAX_OUTPUT_DIMENSION = 8192;
+export const FULLDOME_MASTER_DIMENSION = 4096;
 const SRGB_TO_LINEAR = Float32Array.from({ length: 256 }, (_, value) => {
   const encoded = value / 255;
   return encoded <= 0.04045 ? encoded / 12.92 : ((encoded + 0.055) / 1.055) ** 2.4;
@@ -246,8 +252,17 @@ export async function reconstructSpatialTileAtlas(
   atlasFile: Blob,
   fallbackManifest: SpatialTileAtlasManifest | null,
   emit: (progress: SpatialTileProgress) => void = () => {},
-  reconstructedAt = new Date().toISOString(),
+  optionsOrReconstructedAt:
+    | {
+        readonly reconstructedAt?: string;
+        readonly outputTarget?: SpatialTileOutputTarget;
+      }
+    | string = {},
 ): Promise<SpatialTileReconstructionResult> {
+  const options =
+    typeof optionsOrReconstructedAt === "string"
+      ? { reconstructedAt: optionsOrReconstructedAt }
+      : optionsOrReconstructedAt;
   emit({ progress: 0.01, status: "Reading the spatial atlas and its provenance…" });
   const embeddedManifest = await readSpatialTileAtlasManifest(atlasFile);
   const manifest = embeddedManifest ?? fallbackManifest;
@@ -264,18 +279,14 @@ export async function reconstructSpatialTileAtlas(
     throw new Error("The upscaled atlas changed its 3×2 tile layout or aspect ratio.");
   }
   const scale = (scaleX + scaleY) * 0.5;
-  const outputWidth = Math.max(1, Math.round(manifest.spatialSpec.targetWidth * scale));
-  const outputHeight = Math.max(1, Math.round(manifest.spatialSpec.targetHeight * scale));
-  if (
-    outputWidth > MAX_OUTPUT_DIMENSION ||
-    outputHeight > MAX_OUTPUT_DIMENSION ||
-    outputWidth * outputHeight > MAX_OUTPUT_PIXELS
-  ) {
+  let outputSize: SpatialTileOutputTarget;
+  try {
+    outputSize = resolveSpatialTileOutputSize(manifest.spatialSpec, scale, options.outputTarget);
+  } catch (error) {
     atlasBitmap.close();
-    throw new Error(
-      `The reconstructed master would be ${outputWidth}×${outputHeight}. Keep it below ${MAX_OUTPUT_DIMENSION}px and 36 megapixels.`,
-    );
+    throw error;
   }
+  const { width: outputWidth, height: outputHeight } = outputSize;
 
   emit({ progress: 0.06, status: `Extracting six ${scale.toFixed(2)}× processed crops…` });
   const tileImages = extractTiles(atlasBitmap, manifest, scale);
@@ -364,7 +375,7 @@ export async function reconstructSpatialTileAtlas(
     sourceTargetId: manifest.sourceTargetId,
     sourceMediaAssetId: manifest.sourceMediaAssetId,
     capturedAt: manifest.capturedAt,
-    reconstructedAt,
+    reconstructedAt: options.reconstructedAt ?? new Date().toISOString(),
     audience: structuredClone(manifest.audience),
     layout: manifest.tiles.some((tile) => tile.verticalWarp)
       ? "angular-rim-warped-cap"
@@ -403,11 +414,12 @@ export async function reconstructSpatialTileFiles(
   files: ReadonlyArray<File>,
   fallbackManifest: SpatialTileAtlasManifest | null,
   emit: (progress: SpatialTileProgress) => void = () => {},
+  outputTarget?: SpatialTileOutputTarget,
 ): Promise<SpatialTileReconstructionResult> {
   const pngFiles = files.filter((file) => file.type === "image/png" || file.name.toLowerCase().endsWith(".png"));
   const jsonFile = files.find((file) => file.type === "application/json" || file.name.toLowerCase().endsWith(".json"));
   if (pngFiles.length === 1 && !jsonFile) {
-    return reconstructSpatialTileAtlas(pngFiles[0]!, fallbackManifest, emit);
+    return reconstructSpatialTileAtlas(pngFiles[0]!, fallbackManifest, emit, { outputTarget });
   }
   if (pngFiles.length !== 6) {
     throw new Error("Select the six independently upscaled tile PNGs, or one complete 3×2 atlas PNG.");
@@ -434,9 +446,37 @@ export async function reconstructSpatialTileFiles(
     throw new Error("The selection must contain each of the six Zenith spatial tile identities exactly once.");
   }
   const atlas = await assembleSpatialTileAtlas(identified, manifest);
-  return reconstructSpatialTileAtlas(atlas, manifest, (update) =>
-    emit({ progress: 0.05 + update.progress * 0.95, status: update.status }),
+  return reconstructSpatialTileAtlas(
+    atlas,
+    manifest,
+    (update) => emit({ progress: 0.05 + update.progress * 0.95, status: update.status }),
+    { outputTarget },
   );
+}
+
+/**
+ * Keeps legacy scale-derived reconstruction available while allowing a final
+ * delivery raster to be pinned independently from an external tile upscale.
+ */
+export function resolveSpatialTileOutputSize(
+  spatialSpec: Pick<ImageSpatialSpec, "targetWidth" | "targetHeight">,
+  processedTileScale: number,
+  outputTarget?: SpatialTileOutputTarget,
+): SpatialTileOutputTarget {
+  if (!Number.isFinite(processedTileScale) || processedTileScale <= 0) {
+    throw new Error("The processed spatial tile scale must be positive.");
+  }
+  const width = Math.round(outputTarget?.width ?? spatialSpec.targetWidth * processedTileScale);
+  const height = Math.round(outputTarget?.height ?? spatialSpec.targetHeight * processedTileScale);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) {
+    throw new Error("The reconstructed master dimensions must be positive integers.");
+  }
+  if (width > MAX_OUTPUT_DIMENSION || height > MAX_OUTPUT_DIMENSION || width * height > MAX_OUTPUT_PIXELS) {
+    throw new Error(
+      `The reconstructed master would be ${width}×${height}. Keep it below ${MAX_OUTPUT_DIMENSION}px and 36 megapixels.`,
+    );
+  }
+  return { width, height };
 }
 
 async function assembleSpatialTileAtlas(

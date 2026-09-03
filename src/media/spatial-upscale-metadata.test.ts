@@ -5,8 +5,10 @@ import { DEFAULT_AUDIENCE_IN_SPACE, type SpatialUpscaleProvenance } from "../dom
 import { spatialTilePlan } from "../geometry/spatial-upscale.js";
 import {
   embedSpatialTileAtlasManifest,
+  embedSpatialTilePngMetadata,
   embedSpatialUpscalePngMetadata,
   readSpatialTileAtlasManifest,
+  readSpatialTilePngMetadata,
   readSpatialUpscalePngMetadata,
   type SpatialTileAtlasManifest,
 } from "./spatial-upscale-metadata.js";
@@ -67,11 +69,30 @@ describe("spatial upscale PNG metadata", () => {
       provenance,
     });
   });
+
+  test("pins one independently processable tile to the complete reversible manifest", async () => {
+    const png = new Blob([Buffer.from(ONE_PIXEL_PNG, "base64")], { type: "image/png" });
+    const manifest = tileManifest();
+    const embedded = await embedSpatialTilePngMetadata(png, {
+      format: "zenith-spatial-tile",
+      version: 1,
+      tileId: "front",
+      manifest,
+    });
+
+    expect(await readSpatialTilePngMetadata(embedded)).toEqual({
+      format: "zenith-spatial-tile",
+      version: 1,
+      tileId: "front",
+      manifest,
+    });
+  });
 });
 
 function tileManifest(): SpatialTileAtlasManifest {
   const document = createInitialZenithDocument({ now: "2026-09-03T12:00:00.000Z", projectId: "project-tiles" });
   const composition = selectedComposition(document);
+  const spatialSpec = defaultImageSpatialSpec(composition.plateDraft);
   return {
     format: "zenith-spatial-tile-atlas",
     version: 1,
@@ -82,7 +103,7 @@ function tileManifest(): SpatialTileAtlasManifest {
     sourceMediaAssetId: "media-source",
     sourceLabel: "Fulldome master",
     capturedAt: "2026-09-03T12:00:00.000Z",
-    spatialSpec: defaultImageSpatialSpec(composition.plateDraft),
+    spatialSpec,
     audience: { ...DEFAULT_AUDIENCE_IN_SPACE },
     cameraPosition: [0, 0.22, 0],
     tileFovDegrees: 110,
@@ -90,6 +111,6 @@ function tileManifest(): SpatialTileAtlasManifest {
     padding: 20,
     columns: 3,
     rows: 2,
-    tiles: spatialTilePlan(DEFAULT_AUDIENCE_IN_SPACE),
+    tiles: spatialTilePlan(DEFAULT_AUDIENCE_IN_SPACE, { spatialSpec, tileFovDegrees: 110 }),
   };
 }

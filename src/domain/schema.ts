@@ -187,7 +187,7 @@ export const SpatialUpscaleProvenanceSchema = Schema.mutable(
     capturedAt: nonEmptyString,
     reconstructedAt: nonEmptyString,
     audience: AudienceInSpaceSchema,
-    layout: Schema.Literal("oriented-overlapping-cubemap"),
+    layout: Schema.Literal("oriented-overlapping-cubemap", "angular-rim-warped-cap"),
     tileCount: Schema.Literal(6),
     tileFovDegrees: positiveNumber.pipe(Schema.between(90, 130)),
     tileSize: positiveInteger,

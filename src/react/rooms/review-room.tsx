@@ -31,7 +31,7 @@ import { reviewMediaFilesFromList } from "../../media/browser-image-files.js";
 import { downloadBlob } from "../../media/canvas-utils.js";
 import {
   captureSpatialTileAtlas,
-  reconstructSpatialTileAtlas,
+  reconstructSpatialTileFiles,
   spatialTileOverlapDegrees,
 } from "../../media/spatial-tile-workflow.js";
 import type { SpatialTileAtlasManifest } from "../../media/spatial-upscale-metadata.js";
@@ -71,7 +71,7 @@ export function ReviewRoom() {
   const [spatialProcessing, setSpatialProcessing] = useState<"capture" | "reconstruct" | null>(null);
   const [spatialProgress, setSpatialProgress] = useState(0);
   const [spatialStatus, setSpatialStatus] = useState(
-    "Capture six neighboring views, upscale the atlas, then bring it back.",
+    "Export six clean squares, upscale each one, then bring all six back.",
   );
   const [spatialTileSize, setSpatialTileSize] = useState(512);
   const [lastTileManifest, setLastTileManifest] = useState<SpatialTileAtlasManifest | null>(null);
@@ -298,9 +298,9 @@ export function ReviewRoom() {
         },
       );
       setLastTileManifest(result.manifest);
-      downloadBlob(result.atlas, result.filename);
-      setSpatialStatus("Atlas downloaded. Upscale the whole PNG without cropping it, then import it below.");
-      setStatus("Six overlapping Audience in Space crops exported with portable Zenith metadata.");
+      downloadBlob(result.bundle, result.filename);
+      setSpatialStatus("ZIP downloaded. Upscale the six PNG squares independently and keep their filenames.");
+      setStatus("Six clean overlapping Audience in Space squares exported with portable Zenith metadata.");
     } catch (error) {
       const message = readableError(error);
       setSpatialStatus(message);
@@ -310,11 +310,11 @@ export function ReviewRoom() {
     }
   }
 
-  async function reconstructSpatialTiles(file: File) {
+  async function reconstructSpatialTiles(files: ReadonlyArray<File>) {
     setSpatialProcessing("reconstruct");
     setSpatialProgress(0);
     try {
-      const result = await reconstructSpatialTileAtlas(file, lastTileManifest, (update) => {
+      const result = await reconstructSpatialTileFiles(files, lastTileManifest, (update) => {
         setSpatialProgress(update.progress);
         setSpatialStatus(update.status);
         setStatus(update.status);
@@ -753,9 +753,10 @@ export function ReviewRoom() {
                           <strong>6×</strong>
                         </div>
                         <p>
-                          Captures six overlapping views from this exact audience position. Adjacent views overlap by
-                          {spatialTileOverlapDegrees()}°. On angular domes, the forward crop begins exactly at the
-                          visible rim and a spare polar face preserves its seam coverage.
+                          Captures five clean rim-normalized views plus one polar view from this exact audience
+                          position. Every square contains useful image data; adjacent views overlap by
+                          {spatialTileOverlapDegrees(110, spec.surface.kind === "angular" ? 72 : 90)}° for pyramid
+                          blending.
                         </p>
                         <label className="field-stack">
                           <span>Crop resolution</span>
@@ -775,7 +776,7 @@ export function ReviewRoom() {
                           disabled={!asset || asset.kind !== "image" || spatialProcessing !== null}
                           onClick={() => void captureSpatialTiles()}
                         >
-                          {spatialProcessing === "capture" ? "Capturing spatial crops…" : "1 · Export crop atlas"}
+                          {spatialProcessing === "capture" ? "Capturing spatial crops…" : "1 · Export 6 squares"}
                         </button>
                         <button
                           className="button ghost full"
@@ -783,16 +784,17 @@ export function ReviewRoom() {
                           disabled={spatialProcessing !== null}
                           onClick={() => spatialAtlasInput.current?.click()}
                         >
-                          {spatialProcessing === "reconstruct" ? "Stitching master…" : "2 · Import upscaled atlas"}
+                          {spatialProcessing === "reconstruct" ? "Stitching master…" : "2 · Import 6 upscaled squares"}
                         </button>
                         <input
                           ref={spatialAtlasInput}
                           className="visually-hidden"
                           type="file"
-                          accept="image/png,.png"
+                          accept="image/png,.png,application/json,.json"
+                          multiple
                           onChange={(event) => {
-                            const file = event.currentTarget.files?.[0];
-                            if (file) void reconstructSpatialTiles(file);
+                            const files = Array.from(event.currentTarget.files ?? []);
+                            if (files.length > 0) void reconstructSpatialTiles(files);
                             event.currentTarget.value = "";
                           }}
                         />
@@ -801,8 +803,8 @@ export function ReviewRoom() {
                         ) : null}
                         <output>{spatialStatus}</output>
                         <small>
-                          Keep the 3×2 atlas intact. Zenith restores the original projection with exposure matching and
-                          Laplacian pyramid blending.
+                          The ZIP also includes a reference atlas and manifest. Select the six processed PNGs together;
+                          Zenith restores their geometry with exposure matching and Laplacian pyramid blending.
                         </small>
                       </div>
                     </>

@@ -9,8 +9,10 @@ import { dot, normalize, type Vec3 } from "../projection.js";
 import {
   spatialPointToTileSample,
   spatialSurfacePointFromSourceUv,
+  spatialTileBasis,
   spatialTileCameraPosition,
   spatialTilePlan,
+  spatialTileRimBoundaryV,
 } from "./spatial-upscale.js";
 
 describe("spatial upscale tile geometry", () => {
@@ -108,7 +110,57 @@ describe("spatial upscale tile geometry", () => {
     const sample = spatialPointToTileSample(rimPoint, camera, front!, 110);
 
     expect(sample).not.toBeNull();
-    expect(sample!.u).toBeCloseTo(0.5, 6);
+    expect(sample!.u).toBeGreaterThan(0);
+    expect(sample!.u).toBeLessThan(1);
     expect(sample!.v).toBeCloseTo(example.expectedV, 6);
+  });
+
+  test.each([
+    { mode: "zenith-180" as const, boundaryElevationDegrees: 0, validSide: "above" as const },
+    { mode: "zenith-230" as const, boundaryElevationDegrees: -25, validSide: "above" as const },
+    { mode: "nadir-180" as const, boundaryElevationDegrees: 0, validSide: "below" as const },
+  ])("fills every exported $mode square only with valid carrier samples", (example) => {
+    const baseDraft = selectedComposition(createInitialZenithDocument()).plateDraft;
+    const spec = defaultImageSpatialSpec({
+      ...structuredClone(baseDraft),
+      projectionMode: example.mode,
+      surface: defaultProjectionSurface(example.mode),
+      raster: carrierRasterForProjection(example.mode, baseDraft.raster),
+    });
+    const audience = { ...DEFAULT_AUDIENCE_IN_SPACE, xMeters: 1.2, zMeters: -0.4, yawDegrees: 23 };
+    const camera = spatialTileCameraPosition(audience, spec);
+    const tiles = spatialTilePlan(audience, { spatialSpec: spec, tileFovDegrees: 110 });
+    const tangent = Math.tan((110 * Math.PI) / 360);
+    const boundaryY = Math.sin((example.boundaryElevationDegrees * Math.PI) / 180);
+
+    for (const tile of tiles) {
+      const basis = spatialTileBasis(tile);
+      for (let y = 0; y < 9; y += 1) {
+        const atlasV = (y + 0.5) / 9;
+        for (let x = 0; x < 9; x += 1) {
+          const u = (x + 0.5) / 9;
+          const boundaryV = spatialTileRimBoundaryV(u, camera, tile, 110);
+          const rawV = tile.verticalWarp
+            ? tile.verticalWarp.validSide === "above"
+              ? atlasV * boundaryV!
+              : boundaryV! + atlasV * (1 - boundaryV!)
+            : atlasV;
+          const nx = (u * 2 - 1) * tangent;
+          const ny = (1 - rawV * 2) * tangent;
+          const direction = normalize([
+            basis.forward[0] + basis.right[0] * nx + basis.up[0] * ny,
+            basis.forward[1] + basis.right[1] * nx + basis.up[1] * ny,
+            basis.forward[2] + basis.right[2] * nx + basis.up[2] * ny,
+          ]);
+          const cameraDot = dot(camera, direction);
+          const distance = -cameraDot + Math.sqrt(cameraDot ** 2 + 1 - dot(camera, camera));
+          const surfaceY = camera[1] + direction[1] * distance;
+          expect(
+            example.validSide === "above" ? surfaceY >= boundaryY - 0.00001 : surfaceY <= boundaryY + 0.00001,
+            `${example.mode}/${tile.label} must not export outside-carrier pixels at ${x},${y}`,
+          ).toBe(true);
+        }
+      }
+    }
   });
 });

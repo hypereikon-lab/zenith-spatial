@@ -28,6 +28,11 @@ export type SpatialTileDescriptor = {
   readonly id: SpatialTileId;
   readonly label: string;
   readonly orientation: Quaternion;
+  readonly verticalWarp?: {
+    readonly kind: "angular-rim";
+    readonly boundaryElevationDegrees: number;
+    readonly validSide: "above" | "below";
+  };
 };
 
 export type SpatialTileSample = {
@@ -84,46 +89,101 @@ export function spatialTilePlan(
 function angularSpatialTilePlan(
   audience: AudienceInSpace,
   spec: ImageSpatialSpec,
-  tileFovDegrees: number,
+  _tileFovDegrees: number,
 ): SpatialTileDescriptor[] {
-  const anchor = quaternionFromEulerDegrees(audience.yawDegrees, audience.pitchDegrees, 0);
-  const camera = spatialTileCameraPosition(audience, spec);
   const sourceHalfAngle = sourceProjectionFieldOfViewDegrees(spec.projectionMode) * 0.5;
   const isNadir = sourceProjectionCenterLabel(spec.projectionMode) === "Nadir";
   const boundaryElevationDegrees = isNadir ? -90 + sourceHalfAngle : 90 - sourceHalfAngle;
-  const boundaryElevation = (boundaryElevationDegrees * Math.PI) / 180;
-  const boundaryY = Math.sin(boundaryElevation);
-  const boundaryRadius = Math.cos(boundaryElevation);
-  const halfTileFov = clamp(tileFovDegrees, 90, 130) * 0.5;
-  const seamCoverageFace: SpatialTileId = isNadir ? "up" : "down";
+  const poleFace: SpatialTileId = isNadir ? "down" : "up";
+  const ringYawByFace: Partial<Record<SpatialTileId, number>> = isNadir
+    ? { front: 0, right: 72, back: 144, left: -144, up: -72 }
+    : { front: 0, right: 72, back: 144, left: -144, down: -72 };
 
   return LOCAL_TILE_ROTATIONS.map((tile) => {
-    if (tile.id === seamCoverageFace) {
+    if (tile.id === poleFace) {
       return {
         id: tile.id,
-        label: "Front seam overlap",
-        orientation: anchor,
+        label: isNadir ? "Nadir" : "Zenith",
+        orientation: quaternionFromEulerDegrees(audience.yawDegrees, isNadir ? -90 : 90, 0),
       };
     }
-    if (tile.id !== "front") {
-      return {
-        id: tile.id,
-        label: tile.label,
-        orientation: multiplyQuaternions(anchor, quaternionFromEulerDegrees(tile.yawDegrees, tile.pitchDegrees, 0)),
-      };
-    }
-    const sourceYaw = (audience.yawDegrees * Math.PI) / 180;
-    const boundaryPoint: Vec3 = [Math.sin(sourceYaw) * boundaryRadius, boundaryY, Math.cos(sourceYaw) * boundaryRadius];
-    const direction = subtract(boundaryPoint, camera);
-    const boundaryYawDegrees = (Math.atan2(direction[0], direction[2]) * 180) / Math.PI;
-    const boundaryPitchDegrees = (Math.atan2(direction[1], Math.hypot(direction[0], direction[2])) * 180) / Math.PI;
-    const pitchDegrees = boundaryPitchDegrees + (isNadir ? -halfTileFov : halfTileFov);
+    const ringYaw = ringYawByFace[tile.id]!;
     return {
       id: tile.id,
-      label: tile.label,
-      orientation: quaternionFromEulerDegrees(boundaryYawDegrees, pitchDegrees, 0),
+      label: ringTileLabel(ringYaw),
+      orientation: quaternionFromEulerDegrees(audience.yawDegrees + ringYaw, 0, 0),
+      verticalWarp: {
+        kind: "angular-rim",
+        boundaryElevationDegrees,
+        validSide: isNadir ? "below" : "above",
+      },
     };
   });
+}
+
+function ringTileLabel(yawDegrees: number): string {
+  if (yawDegrees === 0) return "Front";
+  if (yawDegrees === 72) return "Front right";
+  if (yawDegrees === 144) return "Rear right";
+  if (yawDegrees === -144) return "Rear left";
+  return "Front left";
+}
+
+/** Perspective-space row occupied by the angular carrier rim at one tile column. */
+export function spatialTileRimBoundaryV(
+  u: number,
+  cameraPosition: Vec3,
+  tile: SpatialTileDescriptor,
+  tileFovDegrees: number,
+): number | null {
+  const warp = tile.verticalWarp;
+  if (!warp) return null;
+  const basis = spatialTileBasis(tile);
+  const tangent = Math.tan((clamp(tileFovDegrees, 90, 130) * Math.PI) / 360);
+  const nx = (clamp(u, 0, 1) * 2 - 1) * tangent;
+  const horizontalDirection: Vec3 = [basis.forward[0] + basis.right[0] * nx, 0, basis.forward[2] + basis.right[2] * nx];
+  const elevation = (warp.boundaryElevationDegrees * Math.PI) / 180;
+  const boundaryY = Math.sin(elevation);
+  const boundaryRadius = Math.cos(elevation);
+  const a = horizontalDirection[0] ** 2 + horizontalDirection[2] ** 2;
+  const b = 2 * (cameraPosition[0] * horizontalDirection[0] + cameraPosition[2] * horizontalDirection[2]);
+  const c = cameraPosition[0] ** 2 + cameraPosition[2] ** 2 - boundaryRadius ** 2;
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant < 0 || a <= 0.000001) return warp.validSide === "above" ? 1 : 0;
+  const root = Math.sqrt(Math.max(0, discriminant));
+  const roots = [(-b - root) / (2 * a), (-b + root) / (2 * a)].filter((value) => value > 0.000001);
+  const distance = roots.length > 0 ? Math.min(...roots) : null;
+  if (distance === null) return warp.validSide === "above" ? 1 : 0;
+  const ny = (boundaryY - cameraPosition[1]) / (distance * tangent);
+  return clamp(0.5 - ny * 0.5, 0.001, 0.999);
+}
+
+export function remapSpatialTileSampleToAtlas(
+  sample: SpatialTileSample,
+  cameraPosition: Vec3,
+  tile: SpatialTileDescriptor,
+  tileFovDegrees: number,
+): SpatialTileSample | null {
+  const warp = tile.verticalWarp;
+  if (!warp) return weightedSpatialTileSample(sample.u, sample.v);
+  const boundaryV = spatialTileRimBoundaryV(sample.u, cameraPosition, tile, tileFovDegrees);
+  if (boundaryV === null) return null;
+  const tolerance = 0.00001;
+  const v =
+    warp.validSide === "above"
+      ? sample.v <= boundaryV + tolerance
+        ? sample.v / boundaryV
+        : null
+      : sample.v >= boundaryV - tolerance
+        ? (sample.v - boundaryV) / (1 - boundaryV)
+        : null;
+  return v === null ? null : weightedSpatialTileSample(sample.u, clamp(v, 0, 1));
+}
+
+function weightedSpatialTileSample(u: number, v: number): SpatialTileSample {
+  const border = Math.max(0, Math.min(u, v, 1 - u, 1 - v));
+  const feather = smoothstep(0, 0.16, border);
+  return { u, v, weight: feather * feather };
 }
 
 export function spatialTileCameraPosition(audience: AudienceInSpace, spec: ImageSpatialSpec): Vec3 {
@@ -141,7 +201,8 @@ export function spatialPointToTileSample(
   tile: SpatialTileDescriptor,
   tileFovDegrees: number,
 ): SpatialTileSample | null {
-  return spatialPointToTileSampleWithBasis(point, cameraPosition, spatialTileBasis(tile), tileFovDegrees);
+  const sample = spatialPointToTileSampleWithBasis(point, cameraPosition, spatialTileBasis(tile), tileFovDegrees);
+  return sample ? remapSpatialTileSampleToAtlas(sample, cameraPosition, tile, tileFovDegrees) : null;
 }
 
 export function spatialTileBasis(tile: SpatialTileDescriptor): SpatialTileBasis {
@@ -164,9 +225,7 @@ export function spatialPointToTileSampleWithBasis(
   if (Math.abs(nx) > 1.000001 || Math.abs(ny) > 1.000001) return null;
   const u = clamp(nx * 0.5 + 0.5, 0, 1);
   const v = clamp(0.5 - ny * 0.5, 0, 1);
-  const border = Math.max(0, Math.min(u, v, 1 - u, 1 - v));
-  const feather = smoothstep(0, 0.16, border);
-  return { u, v, weight: feather * feather };
+  return weightedSpatialTileSample(u, v);
 }
 
 /** Converts a carrier-map pixel back to the same physical surface rendered in Audience in Space. */

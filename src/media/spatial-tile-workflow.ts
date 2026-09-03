@@ -2,10 +2,12 @@ import type { AudienceInSpace, ImageSpatialSpec, SpatialUpscaleProvenance } from
 import { audienceCameraForProjection } from "../geometry/audience-in-space.js";
 import {
   createSpatialSurfacePointMapper,
+  remapSpatialTileSampleToAtlas,
   spatialSurfacePointFromSourceUv,
   spatialTileBasis,
   spatialTileCameraPosition,
   spatialTilePlan,
+  spatialTileRimBoundaryV,
   type SpatialTileBasis,
   type SpatialTileDescriptor,
   type SpatialTileSample,
@@ -15,10 +17,14 @@ import { clamp, type Vec3 } from "../projection.js";
 import { canvasToBlob } from "./canvas-utils.js";
 import {
   embedSpatialTileAtlasManifest,
+  embedSpatialTilePngMetadata,
   embedSpatialUpscalePngMetadata,
+  parseSpatialTileAtlasManifest,
   readSpatialTileAtlasManifest,
+  readSpatialTilePngMetadata,
   type SpatialTileAtlasManifest,
 } from "./spatial-upscale-metadata.js";
+import { createStoredZip } from "./stored-zip.js";
 
 export type SpatialTileCaptureInput = {
   readonly mediaUrl: string;
@@ -38,6 +44,13 @@ export type SpatialTileCaptureInput = {
 
 export type SpatialTileCaptureResult = {
   readonly atlas: Blob;
+  readonly atlasFilename: string;
+  readonly bundle: Blob;
+  readonly tiles: ReadonlyArray<{
+    readonly id: SpatialTileDescriptor["id"];
+    readonly image: Blob;
+    readonly filename: string;
+  }>;
   readonly manifest: SpatialTileAtlasManifest;
   readonly filename: string;
 };
@@ -57,6 +70,11 @@ export type SpatialTileProgress = {
   readonly status: string;
 };
 
+type IdentifiedSpatialTileFile = {
+  readonly id: SpatialTileDescriptor["id"];
+  readonly file: File;
+};
+
 type PyramidImage = {
   readonly width: number;
   readonly height: number;
@@ -65,8 +83,11 @@ type PyramidImage = {
 
 type PreparedTile = {
   readonly basis: SpatialTileBasis;
+  readonly descriptor: SpatialTileDescriptor;
   readonly pyramid: ReadonlyArray<PyramidImage>;
   readonly tangent: number;
+  readonly cameraPosition: Vec3;
+  readonly tileFovDegrees: number;
   gain: number;
 };
 
@@ -136,6 +157,11 @@ export async function captureSpatialTileAtlas(
   const context = canvas2d(atlas);
   context.fillStyle = "#000";
   context.fillRect(0, 0, atlas.width, atlas.height);
+  const individualTiles: Array<{
+    id: SpatialTileDescriptor["id"];
+    image: Blob;
+    filename: string;
+  }> = [];
 
   try {
     renderer.setSourceImage(bitmap);
@@ -169,7 +195,22 @@ export async function captureSpatialTileAtlas(
       });
       const x = (index % manifest.columns) * cellSize;
       const y = Math.floor(index / manifest.columns) * cellSize;
-      drawPaddedTile(context, tileCanvas, x, y, tileSize, padding);
+      const exportTile = tile.verticalWarp
+        ? normalizeAngularRimTile(tileCanvas, tile, cameraPosition, tileFovDegrees)
+        : tileCanvas;
+      drawPaddedTile(context, exportTile, x, y, tileSize, padding);
+      const tilePng = await canvasToBlob(exportTile, "image/png");
+      const portableTile = await embedSpatialTilePngMetadata(tilePng, {
+        format: "zenith-spatial-tile",
+        version: 1,
+        tileId: tile.id,
+        manifest,
+      });
+      individualTiles.push({
+        id: tile.id,
+        image: portableTile,
+        filename: `${String(index + 1).padStart(2, "0")}-${tile.id}-${slug(tile.label)}.png`,
+      });
       await yieldToBrowser();
     }
   } finally {
@@ -180,11 +221,20 @@ export async function captureSpatialTileAtlas(
   emit({ progress: 0.86, status: "Embedding projection, observer, and tile provenance…" });
   const atlasPng = await canvasToBlob(atlas, "image/png");
   const portableAtlas = await embedSpatialTileAtlasManifest(atlasPng, manifest);
+  const atlasFilename = `zenith-spatial-atlas-${slug(input.sourceLabel)}-${tileSize}px.png`;
+  const bundle = await createStoredZip([
+    ...individualTiles.map((tile) => ({ name: `tiles/${tile.filename}`, data: tile.image })),
+    { name: "zenith-spatial-manifest.json", data: JSON.stringify(manifest, null, 2) },
+    { name: atlasFilename, data: portableAtlas },
+  ]);
   emit({ progress: 1, status: "Spatial crop atlas is ready." });
   return {
     atlas: portableAtlas,
+    atlasFilename,
+    bundle,
+    tiles: individualTiles,
     manifest,
-    filename: `zenith-spatial-tiles-${slug(input.sourceLabel)}-${tileSize}px.png`,
+    filename: `zenith-spatial-tiles-${slug(input.sourceLabel)}-${tileSize}px.zip`,
   };
 }
 
@@ -243,8 +293,11 @@ export async function reconstructSpatialTileAtlas(
   emit({ progress: 0.3, status: "Solving overlap exposure across neighboring crops…" });
   const preparedTiles: PreparedTile[] = manifest.tiles.map((tile, index) => ({
     basis: spatialTileBasis(tile),
+    descriptor: tile,
     pyramid: pyramids[index]!,
     tangent: Math.tan((manifest.tileFovDegrees * Math.PI) / 360),
+    cameraPosition: manifest.cameraPosition,
+    tileFovDegrees: manifest.tileFovDegrees,
     gain: 1,
   }));
   const gains = estimateExposureGains(manifest, preparedTiles);
@@ -313,7 +366,9 @@ export async function reconstructSpatialTileAtlas(
     capturedAt: manifest.capturedAt,
     reconstructedAt,
     audience: structuredClone(manifest.audience),
-    layout: "oriented-overlapping-cubemap",
+    layout: manifest.tiles.some((tile) => tile.verticalWarp)
+      ? "angular-rim-warped-cap"
+      : "oriented-overlapping-cubemap",
     tileCount: 6,
     tileFovDegrees: manifest.tileFovDegrees,
     tileSize: manifest.tileSize,
@@ -341,6 +396,87 @@ export async function reconstructSpatialTileAtlas(
     coverage,
     scale,
   };
+}
+
+/** Accepts either the legacy complete atlas or six independently upscaled tile PNGs. */
+export async function reconstructSpatialTileFiles(
+  files: ReadonlyArray<File>,
+  fallbackManifest: SpatialTileAtlasManifest | null,
+  emit: (progress: SpatialTileProgress) => void = () => {},
+): Promise<SpatialTileReconstructionResult> {
+  const pngFiles = files.filter((file) => file.type === "image/png" || file.name.toLowerCase().endsWith(".png"));
+  const jsonFile = files.find((file) => file.type === "application/json" || file.name.toLowerCase().endsWith(".json"));
+  if (pngFiles.length === 1 && !jsonFile) {
+    return reconstructSpatialTileAtlas(pngFiles[0]!, fallbackManifest, emit);
+  }
+  if (pngFiles.length !== 6) {
+    throw new Error("Select the six independently upscaled tile PNGs, or one complete 3×2 atlas PNG.");
+  }
+
+  emit({ progress: 0.01, status: "Matching six independently upscaled spatial tiles…" });
+  let manifest = fallbackManifest;
+  if (jsonFile) manifest = parseSpatialTileAtlasManifest(JSON.parse(await jsonFile.text()) as unknown);
+  const identified: IdentifiedSpatialTileFile[] = [];
+  for (const file of pngFiles) {
+    const embedded = await readSpatialTilePngMetadata(file).catch(() => null);
+    if (!manifest && embedded) manifest = embedded.manifest;
+    const id = embedded?.tileId ?? tileIdFromFilename(file.name);
+    if (!id) {
+      throw new Error(`Could not identify ${file.name}. Preserve the numbered Zenith tile filenames.`);
+    }
+    identified.push({ id, file });
+  }
+  if (!manifest) {
+    throw new Error("Tile metadata is missing. Select zenith-spatial-manifest.json with the six PNGs.");
+  }
+  const ids = new Set(identified.map((tile) => tile.id));
+  if (ids.size !== 6 || manifest.tiles.some((tile) => !ids.has(tile.id))) {
+    throw new Error("The selection must contain each of the six Zenith spatial tile identities exactly once.");
+  }
+  const atlas = await assembleSpatialTileAtlas(identified, manifest);
+  return reconstructSpatialTileAtlas(atlas, manifest, (update) =>
+    emit({ progress: 0.05 + update.progress * 0.95, status: update.status }),
+  );
+}
+
+async function assembleSpatialTileAtlas(
+  files: ReadonlyArray<IdentifiedSpatialTileFile>,
+  manifest: SpatialTileAtlasManifest,
+): Promise<Blob> {
+  const bitmaps = new Map<SpatialTileDescriptor["id"], ImageBitmap>();
+  try {
+    for (const tile of files)
+      bitmaps.set(tile.id, await createImageBitmap(tile.file, { imageOrientation: "from-image" }));
+    const first = bitmaps.values().next().value as ImageBitmap | undefined;
+    if (!first || first.width !== first.height) throw new Error("Each independently upscaled tile must remain square.");
+    for (const bitmap of bitmaps.values()) {
+      if (bitmap.width !== first.width || bitmap.height !== first.height) {
+        throw new Error("All six independently upscaled tiles must have the same square dimensions.");
+      }
+    }
+    const scale = first.width / manifest.tileSize;
+    const cellSize = manifest.tileSize + manifest.padding * 2;
+    const atlas = document.createElement("canvas");
+    atlas.width = Math.round(cellSize * manifest.columns * scale);
+    atlas.height = Math.round(cellSize * manifest.rows * scale);
+    const context = canvas2d(atlas);
+    context.fillStyle = "#000";
+    context.fillRect(0, 0, atlas.width, atlas.height);
+    manifest.tiles.forEach((tile, index) => {
+      const bitmap = bitmaps.get(tile.id)!;
+      const x = ((index % manifest.columns) * cellSize + manifest.padding) * scale;
+      const y = (Math.floor(index / manifest.columns) * cellSize + manifest.padding) * scale;
+      context.drawImage(bitmap, x, y, manifest.tileSize * scale, manifest.tileSize * scale);
+    });
+    return embedSpatialTileAtlasManifest(await canvasToBlob(atlas, "image/png"), manifest);
+  } finally {
+    for (const bitmap of bitmaps.values()) bitmap.close();
+  }
+}
+
+function tileIdFromFilename(filename: string): SpatialTileDescriptor["id"] | null {
+  const match = /^\d{2}-(front|right|back|left|up|down)(?:-|\.)/i.exec(filename.trim());
+  return (match?.[1]?.toLowerCase() as SpatialTileDescriptor["id"] | undefined) ?? null;
 }
 
 function extractTiles(bitmap: ImageBitmap, manifest: SpatialTileAtlasManifest, scale: number): HTMLCanvasElement[] {
@@ -549,10 +685,32 @@ function directionToTileSample(direction: Vec3, tile: PreparedTile): SpatialTile
   if (Math.abs(nx) > 1.000001 || Math.abs(ny) > 1.000001) return null;
   const u = clamp(nx * 0.5 + 0.5, 0, 1);
   const v = clamp(0.5 - ny * 0.5, 0, 1);
-  const border = Math.max(0, Math.min(u, v, 1 - u, 1 - v));
-  const amount = clamp(border / 0.16, 0, 1);
-  const feather = amount * amount * (3 - 2 * amount);
-  return { u, v, weight: feather * feather };
+  return remapSpatialTileSampleToAtlas({ u, v, weight: 1 }, tile.cameraPosition, tile.descriptor, tile.tileFovDegrees);
+}
+
+function normalizeAngularRimTile(
+  source: HTMLCanvasElement,
+  tile: SpatialTileDescriptor,
+  cameraPosition: Vec3,
+  tileFovDegrees: number,
+): HTMLCanvasElement {
+  if (!tile.verticalWarp) return source;
+  const output = document.createElement("canvas");
+  output.width = source.width;
+  output.height = source.height;
+  const context = canvas2d(output);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  for (let x = 0; x < output.width; x += 1) {
+    const boundaryV = spatialTileRimBoundaryV((x + 0.5) / output.width, cameraPosition, tile, tileFovDegrees);
+    if (boundaryV === null) continue;
+    const boundaryY = boundaryV * source.height;
+    const sourceY = tile.verticalWarp.validSide === "above" ? 0 : Math.min(source.height - 1, boundaryY + 1);
+    const sourceHeight =
+      tile.verticalWarp.validSide === "above" ? Math.max(1, boundaryY - 1) : Math.max(1, source.height - sourceY);
+    context.drawImage(source, x, sourceY, 1, sourceHeight, x, 0, 1, output.height);
+  }
+  return output;
 }
 
 function drawPaddedTile(
@@ -609,8 +767,11 @@ export function spatialTileAtlasScale(
   return x >= 0.5 && Math.abs(x - y) <= Math.max(x, y) * 0.01 ? (x + y) * 0.5 : null;
 }
 
-export function spatialTileOverlapDegrees(tileFovDegrees = DEFAULT_TILE_FOV_DEGREES): number {
-  return Math.max(0, tileFovDegrees - 90);
+export function spatialTileOverlapDegrees(
+  tileFovDegrees = DEFAULT_TILE_FOV_DEGREES,
+  centerSpacingDegrees = 90,
+): number {
+  return Math.max(0, tileFovDegrees - centerSpacingDegrees);
 }
 
 export function spatialTileDescriptorById(

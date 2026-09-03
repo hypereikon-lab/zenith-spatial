@@ -44,14 +44,25 @@ export function doubleGableSurfacePointFromDirection(
   direction: Vec3,
   surface: DoubleGableProjectionSurface = DEFAULT_DOUBLE_GABLE_PROJECTION_SURFACE,
 ): Vec3 | null {
+  return createDoubleGableSurfacePointMapper(surface)(direction);
+}
+
+export function createDoubleGableSurfacePointMapper(
+  surface: DoubleGableProjectionSurface = DEFAULT_DOUBLE_GABLE_PROJECTION_SURFACE,
+): (direction: Vec3) => Vec3 | null {
   const safe = normalizeDoubleGableProjectionSurface(surface);
-  const point = doubleGableSurfaceFromDirectionKernel(
-    d.vec3f(...normalize(direction)),
-    boxSize(safe),
-    observer(safe),
-    parameters(safe),
-  );
-  return point.w < 0.5 ? null : [point.x, point.y, point.z];
+  const safeBox = boxSize(safe);
+  const safeObserver = observer(safe);
+  const safeParameters = parameters(safe);
+  return (direction) => {
+    const point = doubleGableSurfaceFromDirectionKernel(
+      d.vec3f(...normalize(direction)),
+      safeBox,
+      safeObserver,
+      safeParameters,
+    );
+    return point.w < 0.5 ? null : [point.x, point.y, point.z];
+  };
 }
 
 export function doubleGableDirectionFromCarrierUv(

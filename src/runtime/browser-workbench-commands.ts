@@ -24,6 +24,7 @@ import {
   readZenithPlateMetadataFromPngBlob,
   readZenithProvenanceFromPngBlob,
 } from "../media/png-zenith-provenance.js";
+import { readSpatialUpscalePngMetadata } from "../media/spatial-upscale-metadata.js";
 import { readVideoDimensions } from "../media/video-source.js";
 import { defaultPlateSketchPlacement } from "../plates/plate-sketch-arrangement.js";
 import { DEFAULT_PLATE_REFERENCES } from "../plates/default-plate-profile.js";
@@ -524,8 +525,15 @@ function importReviewSource(
                 cause,
               }),
           });
-    const embeddedProvenance =
+    const embeddedSpatialUpscale =
       mediaKind === "image"
+        ? yield* Effect.tryPromise({
+            try: () => readSpatialUpscalePngMetadata(storedFile),
+            catch: (cause) => cause,
+          }).pipe(Effect.catchAll(() => Effect.succeed(null)))
+        : null;
+    const embeddedProvenance =
+      mediaKind === "image" && !embeddedSpatialUpscale
         ? yield* Effect.tryPromise({
             try: () => readZenithProvenanceFromPngBlob(storedFile),
             catch: (cause) => cause,
@@ -542,6 +550,14 @@ function importReviewSource(
         : undefined;
     const provenance = importMode === "image-take" ? matchingProvenance : undefined;
     const standalone = importMode === "standalone-media";
+    const matchingSpatialUpscale =
+      standalone &&
+      embeddedSpatialUpscale &&
+      embeddedSpatialUpscale.provenance.projectId === workbench.getSnapshot().document.project.id &&
+      embeddedSpatialUpscale.provenance.compositionId === composition.id
+        ? embeddedSpatialUpscale
+        : undefined;
+    const portableSpatialSpec = standalone ? embeddedSpatialUpscale?.spatialSpec : undefined;
     const mediaId = yield* ids.next("media");
     const takeId = yield* ids.next("image-take");
     const media: MediaAsset = {
@@ -552,32 +568,41 @@ function importReviewSource(
       width: dimensions.width,
       height: dimensions.height,
       storageRef: `media:${mediaId}`,
-      alt: standalone
-        ? mediaKind === "video"
-          ? "Standalone review video"
-          : "Standalone review media"
-        : "Imported Image Take",
+      alt: matchingSpatialUpscale
+        ? "Audience in Space reconstructed master"
+        : standalone
+          ? mediaKind === "video"
+            ? "Standalone review video"
+            : "Standalone review media"
+          : "Imported Image Take",
       createdAt: now,
     };
     const take: ImageTake = {
       id: takeId,
-      label: standalone
-        ? `Media ${composition.imageTakes.length + 1}`
-        : `Imported Image Take ${composition.imageTakes.length + 1}`,
+      label: matchingSpatialUpscale
+        ? `Spatial Upscale ${composition.imageTakes.length + 1}`
+        : standalone
+          ? `Media ${composition.imageTakes.length + 1}`
+          : `Imported Image Take ${composition.imageTakes.length + 1}`,
       kind: "imported",
       createdAt: now,
       mediaAssetId: mediaId,
       plateCommitId: standalone ? null : (provenance?.plateCommitId ?? composition.selectedPlateCommitId),
-      direction: standalone ? "" : composition.generationDirection,
+      direction: matchingSpatialUpscale
+        ? "Audience in Space tile reconstruction"
+        : standalone
+          ? ""
+          : composition.generationDirection,
       strategy: composition.generationStrategy,
       model: matchingProvenance?.model,
       spatialSpec: {
-        ...(matchingProvenance?.spatialSpec ?? defaultImageSpatialSpec(composition.plateDraft)),
+        ...(portableSpatialSpec ?? matchingProvenance?.spatialSpec ?? defaultImageSpatialSpec(composition.plateDraft)),
         sourceWidth: dimensions.width,
         sourceHeight: dimensions.height,
         sourceAspectRatio: dimensions.width / dimensions.height,
       },
       provenance,
+      spatialUpscale: matchingSpatialUpscale?.provenance,
     };
     yield* repository.put(mediaId, { blob: storedFile, file: storedFile });
     yield* workbench

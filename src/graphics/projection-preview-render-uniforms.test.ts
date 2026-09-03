@@ -67,4 +67,18 @@ describe("projection preview render uniforms", () => {
     expect(uniforms.showSourceCircle).toBe(1);
     expect(uniforms.overlayOpacity).toBeCloseTo(0.78);
   });
+
+  test("disables presentation shading for color-faithful spatial tile capture", () => {
+    const uniforms = buildProjectionPreviewRenderUniformValue({
+      targetWidth: 512,
+      targetHeight: 512,
+      sourceWidth: 1920,
+      sourceHeight: 1920,
+      sourceProjectionMode: "zenith-180",
+      projectionViewMode: "audience-space",
+      captureUnshaded: true,
+    });
+
+    expect(uniforms.shellShade).toBe(0);
+  });
 });

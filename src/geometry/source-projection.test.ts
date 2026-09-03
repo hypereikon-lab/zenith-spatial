@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  createSourceUvToDirectionMapper,
   normalizeSourceProjectionMode,
   SOURCE_PROJECTION_MODES,
   sourceProjectionBeyondHorizonDegrees,
@@ -45,6 +46,25 @@ describe("source projection modes", () => {
         const roundTrip = sourceUvToDirection(uv!.u, uv!.v, mode, 1024, 1024);
         expectVectorClose(roundTrip, direction);
       }
+    }
+  });
+
+  test("keeps the dense precompiled UV mapper identical to the public point mapper", () => {
+    const mapper = createSourceUvToDirectionMapper({
+      mode: "zenith-230",
+      width: 1920,
+      height: 1920,
+      innerGuideSplit: 0.38,
+      carrierHorizonRadius: 0.77,
+    });
+
+    for (const [u, v] of [
+      [0.5, 0.5],
+      [0.5, 0.2],
+      [0.8, 0.5],
+      [0.1, 0.1],
+    ]) {
+      expect(mapper(u, v)).toEqual(sourceUvToDirection(u, v, "zenith-230", 1920, 1920, 1, 0.38, 0.77));
     }
   });
 

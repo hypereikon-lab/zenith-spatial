@@ -64,6 +64,8 @@ export type SourceMapPreviewRenderOptions = {
   domeGuideHorizonSplit?: number | string | null;
   showCaveMask?: boolean;
   invertCaveMask?: boolean;
+  /** Removes presentation shading so captured tiles retain the source master color exactly. */
+  captureUnshaded?: boolean;
   waitForCompletion?: boolean;
   projectionSurface?: ProjectionSurface;
 };

@@ -132,10 +132,16 @@ export function plateEditorViewMatrix(
   sourceProjectionMode: SourceProjectionMode,
 ): Mat4 {
   const normalized = normalizePlateEditorCamera(camera as Partial<PlateEditorCamera> & Record<string, unknown>);
-  if (mode === "dome-pov" || mode === "audience-space") {
+  if (mode === "dome-pov") {
     return viewMatrixFromCameraRigPose({
       ...normalized,
       mode: "inside",
+    });
+  }
+  if (mode === "audience-space") {
+    return viewMatrixFromCameraRigPose({
+      ...normalized,
+      mode: "fly",
     });
   }
   if (mode === "cave-room") {

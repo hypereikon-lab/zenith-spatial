@@ -100,6 +100,21 @@ describe("plate editor projection views", () => {
     expect(matrix[15]).toBe(0);
   });
 
+  test("renders Audience in Space from its measured position instead of collapsing it to the origin", () => {
+    const camera = {
+      ...defaultPlateEditorCamera("cave-270"),
+      position: [1.25, -0.3, 0.8] as [number, number, number],
+      pivot: null,
+      mode: "inside" as const,
+    };
+    const moved = plateEditorViewMatrix("audience-space", camera, "cave-270");
+    const centered = plateEditorViewMatrix("audience-space", { ...camera, position: [0, 0, 0] }, "cave-270");
+    const fixedPov = plateEditorViewMatrix("dome-pov", camera, "cave-270");
+
+    expect(Array.from(moved)).not.toEqual(Array.from(centered));
+    expect(Array.from(fixedPov)).toEqual(Array.from(centered));
+  });
+
   test("frames measured rooms instead of clipping them at the default camera distance", () => {
     const measuredBox = {
       kind: "box-room" as const,

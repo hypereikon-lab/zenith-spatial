@@ -313,6 +313,35 @@ export function sourceUvToDirection(
   carrierHorizonRadius?: number | string | null,
   surface?: ProjectionSurface | null,
 ): Vec3 | null {
+  return createSourceUvToDirectionMapper({
+    mode,
+    width,
+    height,
+    radiusScale,
+    innerGuideSplit,
+    carrierHorizonRadius,
+    surface,
+  })(u, v);
+}
+
+/** Compiles the shared CPU/GPU kernel parameters once for dense raster reprojection. */
+export function createSourceUvToDirectionMapper({
+  mode,
+  width = 2,
+  height = 2,
+  radiusScale = 1,
+  innerGuideSplit,
+  carrierHorizonRadius,
+  surface,
+}: {
+  mode: SourceProjectionMode;
+  width?: number;
+  height?: number;
+  radiusScale?: number | string | null;
+  innerGuideSplit?: number | string | null;
+  carrierHorizonRadius?: number | string | null;
+  surface?: ProjectionSurface | null;
+}): (u: number, v: number) => Vec3 | null {
   const params = compileProjectionKernelParams({
     mode,
     width,
@@ -322,27 +351,29 @@ export function sourceUvToDirection(
     horizonSplit: carrierHorizonRadius,
     surface,
   });
-  const sample = sourceUvToDirectionKernel(
-    d.vec2f(u, v),
-    params.mode,
-    params.topology,
-    params.flags,
-    params.fisheyeScale,
-    params.halfAngle,
-    params.innerSplit,
-    params.horizonSplit,
-    params.physicalSemantic,
-    params.physicalHorizon,
-    params.centerAxis,
-    params.imageRightAxis,
-    params.imageUpAxis,
-    params.boxSize,
-    params.boxObserver,
-    params.roofProfile,
-    params.doubleGable,
-    params.cylinder,
-  );
-  return sample.w < 0.5 ? null : [sample.x, sample.y, sample.z];
+  return (u, v) => {
+    const sample = sourceUvToDirectionKernel(
+      d.vec2f(u, v),
+      params.mode,
+      params.topology,
+      params.flags,
+      params.fisheyeScale,
+      params.halfAngle,
+      params.innerSplit,
+      params.horizonSplit,
+      params.physicalSemantic,
+      params.physicalHorizon,
+      params.centerAxis,
+      params.imageRightAxis,
+      params.imageUpAxis,
+      params.boxSize,
+      params.boxObserver,
+      params.roofProfile,
+      params.doubleGable,
+      params.cylinder,
+    );
+    return sample.w < 0.5 ? null : [sample.x, sample.y, sample.z];
+  };
 }
 
 export function sourceProjectionUsesRadialCarrierRemap(

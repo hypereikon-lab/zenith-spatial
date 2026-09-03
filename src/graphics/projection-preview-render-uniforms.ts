@@ -29,6 +29,7 @@ export type ProjectionPreviewRenderUniformOptions = {
   domeGuideHorizonSplit?: number | string | null;
   showCaveMask?: boolean;
   invertCaveMask?: boolean;
+  captureUnshaded?: boolean;
   sourceOverlayOpacity?: number;
   sourceCapDetailAvailable?: boolean;
   projectionSurface?: ProjectionSurface;
@@ -48,6 +49,7 @@ export function buildProjectionPreviewRenderUniforms({
   domeGuideHorizonSplit,
   showCaveMask,
   invertCaveMask,
+  captureUnshaded,
   sourceOverlayOpacity,
   sourceCapDetailAvailable,
   projectionSurface,
@@ -67,6 +69,7 @@ export function buildProjectionPreviewRenderUniforms({
       domeGuideHorizonSplit,
       showCaveMask,
       invertCaveMask,
+      captureUnshaded,
       sourceOverlayOpacity,
       sourceCapDetailAvailable,
       projectionSurface,
@@ -92,6 +95,7 @@ function buildProjectionPreviewRenderUniformInput({
   domeGuideHorizonSplit,
   showCaveMask,
   invertCaveMask,
+  captureUnshaded,
   sourceOverlayOpacity,
   sourceCapDetailAvailable,
   projectionSurface,
@@ -120,7 +124,11 @@ function buildProjectionPreviewRenderUniformInput({
     overlayOpacity: guideOverlay === "clean" || (!guideOverlay && !showProjectionGuides) ? 0.28 : 0.78,
     guideOverlay,
     showGuides: Boolean(showProjectionGuides),
-    shellShade: resolvedViewMode === "dome-pov" || resolvedViewMode === "audience-space" ? 0.12 : 0.3,
+    shellShade: captureUnshaded
+      ? 0
+      : resolvedViewMode === "dome-pov" || resolvedViewMode === "audience-space"
+        ? 0.12
+        : 0.3,
     caveMaskMode: (showCaveMask ? (invertCaveMask ? 2 : 1) : 0) as 0 | 1 | 2,
     cameraPosition: camera.position,
     sourceOverlayOpacity,

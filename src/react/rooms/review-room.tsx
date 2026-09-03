@@ -28,6 +28,13 @@ import {
 } from "../../plates/plate-editor-view.js";
 import { sourceProjectionLabel } from "../../geometry/source-projection.js";
 import { reviewMediaFilesFromList } from "../../media/browser-image-files.js";
+import { downloadBlob } from "../../media/canvas-utils.js";
+import {
+  captureSpatialTileAtlas,
+  reconstructSpatialTileAtlas,
+  spatialTileOverlapDegrees,
+} from "../../media/spatial-tile-workflow.js";
+import type { SpatialTileAtlasManifest } from "../../media/spatial-upscale-metadata.js";
 import { importReviewMedia } from "../../runtime/browser-workbench-commands.js";
 import { chooseImageTake, choosePlateCommit, updateWorkspace } from "../../runtime/workspace-commands.js";
 import { useEffectRunner, useWorkbenchSnapshot } from "../runtime-bridge.js";
@@ -61,8 +68,16 @@ export function ReviewRoom() {
   const [status, setStatus] = useState("Select a Plate Commit or Image Take.");
   const [dropActive, setDropActive] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [spatialProcessing, setSpatialProcessing] = useState<"capture" | "reconstruct" | null>(null);
+  const [spatialProgress, setSpatialProgress] = useState(0);
+  const [spatialStatus, setSpatialStatus] = useState(
+    "Capture six neighboring views, upscale the atlas, then bring it back.",
+  );
+  const [spatialTileSize, setSpatialTileSize] = useState(512);
+  const [lastTileManifest, setLastTileManifest] = useState<SpatialTileAtlasManifest | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   const mediaInput = useRef<HTMLInputElement>(null);
+  const spatialAtlasInput = useRef<HTMLInputElement>(null);
   const cameraDrag = useRef<ProjectionCameraDragState | null>(null);
   const renderSerial = useRef(0);
 
@@ -258,6 +273,70 @@ export function ReviewRoom() {
     );
   }
 
+  async function captureSpatialTiles() {
+    if (!mediaUrl || !asset || asset.kind !== "image" || !spec || !target) return;
+    setSpatialProcessing("capture");
+    setSpatialProgress(0);
+    try {
+      const result = await captureSpatialTileAtlas(
+        {
+          mediaUrl,
+          projectId: snapshot.document.project.id,
+          compositionId: composition.id,
+          sourceTargetKind: target.kind,
+          sourceTargetId: target.value.id,
+          sourceMediaAssetId: target.value.mediaAssetId,
+          sourceLabel: target.value.label,
+          spatialSpec: spec,
+          audience,
+          tileSize: spatialTileSize,
+        },
+        (update) => {
+          setSpatialProgress(update.progress);
+          setSpatialStatus(update.status);
+          setStatus(update.status);
+        },
+      );
+      setLastTileManifest(result.manifest);
+      downloadBlob(result.atlas, result.filename);
+      setSpatialStatus("Atlas downloaded. Upscale the whole PNG without cropping it, then import it below.");
+      setStatus("Six overlapping Audience in Space crops exported with portable Zenith metadata.");
+    } catch (error) {
+      const message = readableError(error);
+      setSpatialStatus(message);
+      setStatus(message);
+    } finally {
+      setSpatialProcessing(null);
+    }
+  }
+
+  async function reconstructSpatialTiles(file: File) {
+    setSpatialProcessing("reconstruct");
+    setSpatialProgress(0);
+    try {
+      const result = await reconstructSpatialTileAtlas(file, lastTileManifest, (update) => {
+        setSpatialProgress(update.progress);
+        setSpatialStatus(update.status);
+        setStatus(update.status);
+      });
+      const reconstructed = new File([result.image], result.filename, {
+        type: "image/png",
+        lastModified: Date.now(),
+      });
+      await run(importReviewMedia(reconstructed));
+      setSpatialStatus(
+        `${result.scale.toFixed(2)}× master added to Review · ${(result.coverage * 100).toFixed(1)}% carrier coverage.`,
+      );
+      setStatus("Spatial master reconstructed with exposure compensation and Laplacian pyramid blending.");
+    } catch (error) {
+      const message = readableError(error);
+      setSpatialStatus(message);
+      setStatus(message);
+    } finally {
+      setSpatialProcessing(null);
+    }
+  }
+
   function pointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     if (viewMode === "source-map") return;
     cameraDrag.current = beginProjectionCameraDrag({
@@ -341,11 +420,13 @@ export function ReviewRoom() {
                 <span>
                   {take.kind === "generated"
                     ? "GEN"
-                    : snapshot.document.project.assets[take.mediaAssetId]?.kind === "video"
-                      ? "VID"
-                      : isStandaloneReviewMedia(take)
-                        ? "MED"
-                        : "IMP"}
+                    : take.spatialUpscale
+                      ? "SUP"
+                      : snapshot.document.project.assets[take.mediaAssetId]?.kind === "video"
+                        ? "VID"
+                        : isStandaloneReviewMedia(take)
+                          ? "MED"
+                          : "IMP"}
                 </span>
                 <strong>{take.label}</strong>
                 <small>
@@ -575,13 +656,23 @@ export function ReviewRoom() {
                 ? asset?.kind === "video"
                   ? "Video"
                   : "Media"
-                : target?.kind === "take"
-                  ? "Image Take"
-                  : "Plate Commit"}
+                : target?.kind === "take" && target.value.spatialUpscale
+                  ? "Spatial master"
+                  : target?.kind === "take"
+                    ? "Image Take"
+                    : "Plate Commit"}
             </h2>
           </div>
           <strong>
-            {standaloneMedia ? (asset?.kind === "video" ? "VID" : "MED") : target?.kind === "take" ? "IMG" : "PLT"}
+            {standaloneMedia
+              ? asset?.kind === "video"
+                ? "VID"
+                : "MED"
+              : target?.kind === "take" && target.value.spatialUpscale
+                ? "SUP"
+                : target?.kind === "take"
+                  ? "IMG"
+                  : "PLT"}
           </strong>
         </header>
         <div className="inspector-scroll">
@@ -640,18 +731,80 @@ export function ReviewRoom() {
                 </div>
                 {spec ? (
                   viewMode === "audience-space" ? (
-                    <AudienceInSpaceControls
-                      audience={audience}
-                      projectionMode={spec.projectionMode}
-                      surface={spec.surface}
-                      onChange={(next) =>
-                        void run(
-                          updateWorkspace((workspace) => {
-                            workspace.audience = next;
-                          }),
-                        )
-                      }
-                    />
+                    <>
+                      <AudienceInSpaceControls
+                        audience={audience}
+                        projectionMode={spec.projectionMode}
+                        surface={spec.surface}
+                        onChange={(next) =>
+                          void run(
+                            updateWorkspace((workspace) => {
+                              workspace.audience = next;
+                            }),
+                          )
+                        }
+                      />
+                      <div className="spatial-upscale-panel" aria-label="Spatial tile upscale">
+                        <div className="spatial-upscale-heading">
+                          <div>
+                            <span className="eyebrow">LOCAL / NO PAID CALL</span>
+                            <h3>Spatial upscale</h3>
+                          </div>
+                          <strong>6×</strong>
+                        </div>
+                        <p>
+                          Captures front, sides, back, up and down from this exact audience position. Adjacent views
+                          overlap by {spatialTileOverlapDegrees()}°.
+                        </p>
+                        <label className="field-stack">
+                          <span>Crop resolution</span>
+                          <select
+                            value={spatialTileSize}
+                            disabled={spatialProcessing !== null}
+                            onChange={(event) => setSpatialTileSize(Number(event.currentTarget.value))}
+                          >
+                            <option value={512}>512 × 512 · balanced</option>
+                            <option value={768}>768 × 768 · detailed</option>
+                            <option value={1024}>1024 × 1024 · heavy</option>
+                          </select>
+                        </label>
+                        <button
+                          className="button full"
+                          type="button"
+                          disabled={!asset || asset.kind !== "image" || spatialProcessing !== null}
+                          onClick={() => void captureSpatialTiles()}
+                        >
+                          {spatialProcessing === "capture" ? "Capturing spatial crops…" : "1 · Export crop atlas"}
+                        </button>
+                        <button
+                          className="button ghost full"
+                          type="button"
+                          disabled={spatialProcessing !== null}
+                          onClick={() => spatialAtlasInput.current?.click()}
+                        >
+                          {spatialProcessing === "reconstruct" ? "Stitching master…" : "2 · Import upscaled atlas"}
+                        </button>
+                        <input
+                          ref={spatialAtlasInput}
+                          className="visually-hidden"
+                          type="file"
+                          accept="image/png,.png"
+                          onChange={(event) => {
+                            const file = event.currentTarget.files?.[0];
+                            if (file) void reconstructSpatialTiles(file);
+                            event.currentTarget.value = "";
+                          }}
+                        />
+                        {spatialProcessing ? (
+                          <progress max={1} value={spatialProgress} aria-label="Spatial upscale progress" />
+                        ) : null}
+                        <output>{spatialStatus}</output>
+                        <small>
+                          Keep the 3×2 atlas intact. Zenith restores the original projection with exposure matching and
+                          Laplacian pyramid blending.
+                        </small>
+                      </div>
+                    </>
                   ) : (
                     <ProjectionCameraControls
                       viewMode={viewMode}
@@ -720,6 +873,24 @@ export function ReviewRoom() {
                     <dd>{target.value.provenance.draftFingerprint.slice(0, 24)}…</dd>
                   </div>
                 )}
+                {target.kind === "take" && target.value.spatialUpscale ? (
+                  <>
+                    <div>
+                      <dt>Spatial source</dt>
+                      <dd>{target.value.spatialUpscale.sourceTargetId}</dd>
+                    </div>
+                    <div>
+                      <dt>Upscale</dt>
+                      <dd>
+                        {target.value.spatialUpscale.scale.toFixed(2)}× · {target.value.spatialUpscale.tileCount} tiles
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Stitch</dt>
+                      <dd>{target.value.spatialUpscale.blend}</dd>
+                    </div>
+                  </>
+                ) : null}
               </dl>
             </div>
           ) : null}
@@ -730,7 +901,7 @@ export function ReviewRoom() {
 }
 
 function isStandaloneReviewMedia(take: ImageTake | null | undefined): boolean {
-  return take?.kind === "imported" && take.plateCommitId === null && !take.provenance;
+  return take?.kind === "imported" && take.plateCommitId === null && !take.provenance && !take.spatialUpscale;
 }
 
 function viewLabel(mode: PlateEditorViewMode): string {

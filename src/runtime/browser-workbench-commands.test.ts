@@ -9,6 +9,7 @@ import {
   selectedComposition,
 } from "../domain/project.js";
 import type { MediaAsset, PlateCommit } from "../domain/schema.js";
+import { embedSpatialUpscalePngMetadata } from "../media/spatial-upscale-metadata.js";
 import { importReviewMedia, openDefaultReviewMedia } from "./browser-workbench-commands.js";
 import { IdGenerator } from "./id-service.js";
 import { MediaRepository } from "./media-repository.js";
@@ -131,6 +132,82 @@ describe("browser workbench media commands", () => {
         }).pipe(Effect.provide(layer)),
       ),
     );
+  });
+
+  test("restores portable spatial-upscale provenance when the project matches", async () => {
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ width: 3840, height: 3840, close: vi.fn() }) as unknown as ImageBitmap),
+    );
+    const document = createInitialZenithDocument({ now: NOW, projectId: "project-upscale" });
+    const composition = selectedComposition(document);
+    const spatialSpec = {
+      ...defaultImageSpatialSpec(composition.plateDraft),
+      sourceWidth: 3840,
+      sourceHeight: 3840,
+      targetWidth: 3840,
+      targetHeight: 3840,
+    };
+    const provenance = {
+      version: 1 as const,
+      projectId: document.project.id,
+      compositionId: composition.id,
+      sourceTargetKind: "take" as const,
+      sourceTargetId: "take-original",
+      sourceMediaAssetId: "media-original",
+      capturedAt: NOW,
+      reconstructedAt: NOW,
+      audience: structuredClone(document.workspace.audience),
+      layout: "oriented-overlapping-cubemap" as const,
+      tileCount: 6 as const,
+      tileFovDegrees: 110,
+      tileSize: 512,
+      atlasPadding: 20,
+      scale: 2,
+      blend: "laplacian-pyramid" as const,
+      pyramidLevels: 5,
+      exposureCompensation: true,
+    };
+    const onePixel = new Blob(
+      [
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      ],
+      { type: "image/png" },
+    );
+    const embedded = await embedSpatialUpscalePngMetadata(onePixel, {
+      format: "zenith-spatial-upscale",
+      version: 1,
+      spatialSpec,
+      provenance,
+    });
+    const file = new File([embedded], "reconstructed.png", { type: "image/png" });
+    const layer = Layer.mergeAll(
+      WorkbenchService.fromDocument(document),
+      MediaRepository.test({
+        createObjectUrl: () => "blob:spatial-upscale",
+        revokeObjectUrl: () => undefined,
+      }),
+      IdGenerator.deterministic(["media-upscale", "take-upscale"]),
+    );
+
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const imported = yield* importReviewMedia(file);
+            expect(imported.label).toBe("Spatial Upscale 1");
+            expect(imported.plateCommitId).toBeNull();
+            expect(imported.spatialSpec).toEqual(spatialSpec);
+            expect(imported.spatialUpscale).toEqual(provenance);
+          }).pipe(Effect.provide(layer)),
+        ),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

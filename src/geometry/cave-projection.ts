@@ -94,13 +94,21 @@ export function caveSurfacePointFromContinuityDirection(
   direction: Vec3,
   room: CaveRoom = DEFAULT_CAVE_ROOM,
 ): Vec3 | null {
+  return createCaveSurfacePointMapper(room)(direction);
+}
+
+export function createCaveSurfacePointMapper(room: CaveRoom = DEFAULT_CAVE_ROOM): (direction: Vec3) => Vec3 | null {
   const safeRoom = normalizeCaveRoom(room);
-  const point = caveSurfaceFromContinuityDirectionKernel(
-    d.vec3f(direction[0], direction[1], direction[2]),
-    caveBoxSize(safeRoom),
-    caveObserver(safeRoom),
-  );
-  return point.w < 0.5 ? null : [point.x, point.y, point.z];
+  const boxSize = caveBoxSize(safeRoom);
+  const observer = caveObserver(safeRoom);
+  return (direction) => {
+    const point = caveSurfaceFromContinuityDirectionKernel(
+      d.vec3f(direction[0], direction[1], direction[2]),
+      boxSize,
+      observer,
+    );
+    return point.w < 0.5 ? null : [point.x, point.y, point.z];
+  };
 }
 
 export function estimateCaveFaceCoverage(

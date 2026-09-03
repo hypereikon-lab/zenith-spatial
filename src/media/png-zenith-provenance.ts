@@ -98,6 +98,12 @@ function embedInternationalText(bytes: Uint8Array, keyword: string, text: string
   return concatenateBytes(output);
 }
 
+/** Adds or replaces one Zenith-owned UTF-8 iTXt entry without disturbing image pixels. */
+export function embedZenithPngText(bytes: Uint8Array, keyword: string, text: string): Uint8Array {
+  if (!keyword.startsWith("zenith.")) throw new Error("Portable PNG metadata keywords must be Zenith-owned.");
+  return embedInternationalText(bytes, keyword, text);
+}
+
 export function readZenithPngProvenance(bytes: Uint8Array): ImageGenerationProvenance | null {
   const value = readInternationalText(bytes, ZENITH_PNG_PROVENANCE_KEYWORD);
   return value === null
@@ -128,6 +134,12 @@ function readInternationalText(bytes: Uint8Array, keyword: string): string | nul
     return decodeInternationalText(data);
   }
   return null;
+}
+
+/** Reads and checksum-validates one Zenith-owned UTF-8 iTXt entry. */
+export function readZenithPngText(bytes: Uint8Array, keyword: string): string | null {
+  if (!keyword.startsWith("zenith.")) throw new Error("Portable PNG metadata keywords must be Zenith-owned.");
+  return readInternationalText(bytes, keyword);
 }
 
 export function readZenithProvenanceFromPngDataUrl(dataUrl: string): ImageGenerationProvenance | null {

@@ -11,6 +11,7 @@ import { SourceProjectionModeSchema } from "../lib/shared/contracts/projection-p
 export const ZENITH_SCHEMA_VERSION = 1;
 export const IMAGE_PROVENANCE_VERSION = 2;
 export const GENERATION_JOB_VERSION = 1;
+export const SPATIAL_UPSCALE_VERSION = 1;
 
 const finiteNumber = Schema.Number.pipe(Schema.finite());
 const positiveNumber = finiteNumber.pipe(Schema.positive());
@@ -20,6 +21,28 @@ const nonEmptyString = Schema.String.pipe(Schema.minLength(1));
 const portableStorageRef = nonEmptyString.pipe(
   Schema.filter((value) => !value.startsWith("blob:") || "object URLs are runtime-only"),
 );
+
+export const AudienceInSpaceSchema = Schema.mutable(
+  Schema.Struct({
+    xMeters: finiteNumber,
+    zMeters: finiteNumber,
+    eyeHeightMeters: positiveNumber,
+    yawDegrees: finiteNumber,
+    pitchDegrees: finiteNumber,
+    fovDegrees: positiveNumber.pipe(Schema.between(30, 130)),
+    domeRadiusMeters: positiveNumber,
+  }),
+);
+
+export const DEFAULT_AUDIENCE_IN_SPACE = {
+  xMeters: 0,
+  zMeters: 0,
+  eyeHeightMeters: 1.65,
+  yawDegrees: 0,
+  pitchDegrees: 0,
+  fovDegrees: 82,
+  domeRadiusMeters: 7.5,
+} as const;
 
 export const MediaAssetSchema = Schema.mutable(
   Schema.Struct({
@@ -152,6 +175,30 @@ export const ImageGenerationProvenanceSchema = Schema.mutable(
   ),
 );
 
+/** Local, portable provenance for a master reconstructed from overlapping Audience in Space views. */
+export const SpatialUpscaleProvenanceSchema = Schema.mutable(
+  Schema.Struct({
+    version: Schema.Literal(SPATIAL_UPSCALE_VERSION),
+    projectId: nonEmptyString,
+    compositionId: nonEmptyString,
+    sourceTargetKind: Schema.Literal("take", "commit"),
+    sourceTargetId: nonEmptyString,
+    sourceMediaAssetId: nonEmptyString,
+    capturedAt: nonEmptyString,
+    reconstructedAt: nonEmptyString,
+    audience: AudienceInSpaceSchema,
+    layout: Schema.Literal("oriented-overlapping-cubemap"),
+    tileCount: Schema.Literal(6),
+    tileFovDegrees: positiveNumber.pipe(Schema.between(90, 130)),
+    tileSize: positiveInteger,
+    atlasPadding: nonNegativeInteger,
+    scale: positiveNumber,
+    blend: Schema.Literal("laplacian-pyramid"),
+    pyramidLevels: positiveInteger,
+    exposureCompensation: Schema.Boolean,
+  }),
+);
+
 export const ImageTakeSchema = Schema.mutable(
   Schema.Struct({
     id: nonEmptyString,
@@ -168,6 +215,7 @@ export const ImageTakeSchema = Schema.mutable(
     generationOutputId: Schema.optional(nonEmptyString),
     spatialSpec: ImageSpatialSpecSchema,
     provenance: Schema.optional(ImageGenerationProvenanceSchema),
+    spatialUpscale: Schema.optional(SpatialUpscaleProvenanceSchema),
   }),
 ).pipe(
   Schema.filter((take) => {
@@ -177,6 +225,12 @@ export const ImageTakeSchema = Schema.mutable(
     }
     if (take.provenance && take.provenance.plateCommitId !== take.plateCommitId) {
       issues.push({ path: ["provenance", "plateCommitId"], message: "take provenance must pin its Plate Commit" });
+    }
+    if (take.spatialUpscale && (take.kind !== "imported" || take.plateCommitId !== null || take.provenance)) {
+      issues.push({
+        path: ["spatialUpscale"],
+        message: "spatial-upscale takes must remain standalone imported Review media",
+      });
     }
     return issues;
   }),
@@ -306,8 +360,20 @@ export const ProjectSchema = Schema.mutable(
             message: `Image Take ${take.id} provenance does not match its Project and Composition`,
           });
         }
+        if (
+          take.spatialUpscale &&
+          (take.spatialUpscale.projectId !== project.id || take.spatialUpscale.compositionId !== composition.id)
+        ) {
+          issues.push({
+            path: ["compositions", index, "imageTakes"],
+            message: `Spatial upscale ${take.id} provenance does not match its Project and Composition`,
+          });
+        }
         const media = project.assets[take.mediaAssetId];
-        if (media?.kind === "video" && (take.kind === "generated" || take.plateCommitId || take.provenance)) {
+        if (
+          media?.kind === "video" &&
+          (take.kind === "generated" || take.plateCommitId || take.provenance || take.spatialUpscale)
+        ) {
           issues.push({
             path: ["compositions", index, "imageTakes"],
             message: `Video media ${take.id} must remain a standalone Review item`,
@@ -331,28 +397,6 @@ export const ProjectSchema = Schema.mutable(
 
 const vec3 = Schema.mutable(Schema.Tuple(finiteNumber, finiteNumber, finiteNumber));
 const quaternion = Schema.mutable(Schema.Tuple(finiteNumber, finiteNumber, finiteNumber, finiteNumber));
-
-export const AudienceInSpaceSchema = Schema.mutable(
-  Schema.Struct({
-    xMeters: finiteNumber,
-    zMeters: finiteNumber,
-    eyeHeightMeters: positiveNumber,
-    yawDegrees: finiteNumber,
-    pitchDegrees: finiteNumber,
-    fovDegrees: positiveNumber.pipe(Schema.between(30, 130)),
-    domeRadiusMeters: positiveNumber,
-  }),
-);
-
-export const DEFAULT_AUDIENCE_IN_SPACE = {
-  xMeters: 0,
-  zMeters: 0,
-  eyeHeightMeters: 1.65,
-  yawDegrees: 0,
-  pitchDegrees: 0,
-  fovDegrees: 82,
-  domeRadiusMeters: 7.5,
-} as const;
 
 export const WorkspaceSchema = Schema.mutable(
   Schema.Struct({
@@ -521,6 +565,7 @@ export type ImageSpatialSpec = Schema.Schema.Type<typeof ImageSpatialSpecSchema>
 export type PlateCommitProvenance = Schema.Schema.Type<typeof PlateCommitProvenanceSchema>;
 export type PlateCommit = Schema.Schema.Type<typeof PlateCommitSchema>;
 export type ImageGenerationProvenance = Schema.Schema.Type<typeof ImageGenerationProvenanceSchema>;
+export type SpatialUpscaleProvenance = Schema.Schema.Type<typeof SpatialUpscaleProvenanceSchema>;
 export type ImageTake = Schema.Schema.Type<typeof ImageTakeSchema>;
 export type Composition = Schema.Schema.Type<typeof CompositionSchema>;
 export type Project = Schema.Schema.Type<typeof ProjectSchema>;

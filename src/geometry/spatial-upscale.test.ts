@@ -61,7 +61,10 @@ describe("spatial upscale tile geometry", () => {
       };
       const spec = defaultImageSpatialSpec(draft);
       const camera = spatialTileCameraPosition(DEFAULT_AUDIENCE_IN_SPACE, spec);
-      const tiles = spatialTilePlan(DEFAULT_AUDIENCE_IN_SPACE);
+      const tiles = spatialTilePlan(DEFAULT_AUDIENCE_IN_SPACE, {
+        spatialSpec: spec,
+        tileFovDegrees: 110,
+      });
       let valid = 0;
       for (let y = 0; y < 31; y += 1) {
         for (let x = 0; x < 31; x += 1) {
@@ -79,5 +82,33 @@ describe("spatial upscale tile geometry", () => {
       }
       expect(valid).toBeGreaterThan(50);
     }
+  });
+
+  test.each([
+    { mode: "zenith-180" as const, boundaryElevationDegrees: 0, expectedV: 1 },
+    { mode: "zenith-230" as const, boundaryElevationDegrees: -25, expectedV: 1 },
+    { mode: "nadir-180" as const, boundaryElevationDegrees: 0, expectedV: 0 },
+  ])("places the $mode forward crop edge exactly on its visible angular rim", (example) => {
+    const baseDraft = selectedComposition(createInitialZenithDocument()).plateDraft;
+    const draft = {
+      ...structuredClone(baseDraft),
+      projectionMode: example.mode,
+      surface: defaultProjectionSurface(example.mode),
+      raster: carrierRasterForProjection(example.mode, baseDraft.raster),
+    };
+    const spec = defaultImageSpatialSpec(draft);
+    const audience = { ...DEFAULT_AUDIENCE_IN_SPACE, xMeters: 1.2, zMeters: -0.4 };
+    const camera = spatialTileCameraPosition(audience, spec);
+    const [front] = spatialTilePlan(audience, {
+      spatialSpec: spec,
+      tileFovDegrees: 110,
+    });
+    const elevation = (example.boundaryElevationDegrees * Math.PI) / 180;
+    const rimPoint: Vec3 = [0, Math.sin(elevation), Math.cos(elevation)];
+    const sample = spatialPointToTileSample(rimPoint, camera, front!, 110);
+
+    expect(sample).not.toBeNull();
+    expect(sample!.u).toBeCloseTo(0.5, 6);
+    expect(sample!.v).toBeCloseTo(example.expectedV, 6);
   });
 });

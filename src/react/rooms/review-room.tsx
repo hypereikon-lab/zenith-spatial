@@ -753,8 +753,9 @@ export function ReviewRoom() {
                           <strong>6×</strong>
                         </div>
                         <p>
-                          Captures front, sides, back, up and down from this exact audience position. Adjacent views
-                          overlap by {spatialTileOverlapDegrees()}°.
+                          Captures six overlapping views from this exact audience position. Adjacent views overlap by
+                          {spatialTileOverlapDegrees()}°. On angular domes, the forward crop begins exactly at the
+                          visible rim and a spare polar face preserves its seam coverage.
                         </p>
                         <label className="field-stack">
                           <span>Crop resolution</span>

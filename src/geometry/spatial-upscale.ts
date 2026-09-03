@@ -13,7 +13,11 @@ import {
 } from "./cylinder-continuity-carrier.js";
 import { createCylinderWallCarrierProfile, cylinderWallUvToSurfacePoint } from "./cylinder-wall-carrier.js";
 import { createDoubleGableSurfacePointMapper } from "./double-gable-projection.js";
-import { createSourceUvToDirectionMapper } from "./source-projection.js";
+import {
+  createSourceUvToDirectionMapper,
+  sourceProjectionCenterLabel,
+  sourceProjectionFieldOfViewDegrees,
+} from "./source-projection.js";
 import { normalizeProjectionSurfaceForMode } from "../lib/shared/contracts/projection-authoring.js";
 import { clamp, dot, normalize, subtract, type Vec3 } from "../projection.js";
 
@@ -38,6 +42,11 @@ export type SpatialTileBasis = {
   readonly forward: Vec3;
 };
 
+export type SpatialTilePlanOptions = {
+  readonly spatialSpec?: ImageSpatialSpec;
+  readonly tileFovDegrees?: number;
+};
+
 const LOCAL_TILE_ROTATIONS: ReadonlyArray<{
   id: SpatialTileId;
   label: string;
@@ -52,14 +61,69 @@ const LOCAL_TILE_ROTATIONS: ReadonlyArray<{
   { id: "down", label: "Down", yawDegrees: 0, pitchDegrees: -90 },
 ];
 
-/** Six overlapping perspective cameras, rigidly anchored to the current audience gaze. */
-export function spatialTilePlan(audience: AudienceInSpace): SpatialTileDescriptor[] {
+/**
+ * Six overlapping perspective cameras anchored to the current audience gaze.
+ * Angular caps make the forward crop rim-aware so its lower center lands on
+ * the actually visible carrier boundary instead of spending pixels below it.
+ */
+export function spatialTilePlan(
+  audience: AudienceInSpace,
+  options: SpatialTilePlanOptions = {},
+): SpatialTileDescriptor[] {
+  if (options.spatialSpec?.surface.kind === "angular") {
+    return angularSpatialTilePlan(audience, options.spatialSpec, options.tileFovDegrees ?? 110);
+  }
   const anchor = quaternionFromEulerDegrees(audience.yawDegrees, audience.pitchDegrees, 0);
   return LOCAL_TILE_ROTATIONS.map((tile) => ({
     id: tile.id,
     label: tile.label,
     orientation: multiplyQuaternions(anchor, quaternionFromEulerDegrees(tile.yawDegrees, tile.pitchDegrees, 0)),
   }));
+}
+
+function angularSpatialTilePlan(
+  audience: AudienceInSpace,
+  spec: ImageSpatialSpec,
+  tileFovDegrees: number,
+): SpatialTileDescriptor[] {
+  const anchor = quaternionFromEulerDegrees(audience.yawDegrees, audience.pitchDegrees, 0);
+  const camera = spatialTileCameraPosition(audience, spec);
+  const sourceHalfAngle = sourceProjectionFieldOfViewDegrees(spec.projectionMode) * 0.5;
+  const isNadir = sourceProjectionCenterLabel(spec.projectionMode) === "Nadir";
+  const boundaryElevationDegrees = isNadir ? -90 + sourceHalfAngle : 90 - sourceHalfAngle;
+  const boundaryElevation = (boundaryElevationDegrees * Math.PI) / 180;
+  const boundaryY = Math.sin(boundaryElevation);
+  const boundaryRadius = Math.cos(boundaryElevation);
+  const halfTileFov = clamp(tileFovDegrees, 90, 130) * 0.5;
+  const seamCoverageFace: SpatialTileId = isNadir ? "up" : "down";
+
+  return LOCAL_TILE_ROTATIONS.map((tile) => {
+    if (tile.id === seamCoverageFace) {
+      return {
+        id: tile.id,
+        label: "Front seam overlap",
+        orientation: anchor,
+      };
+    }
+    if (tile.id !== "front") {
+      return {
+        id: tile.id,
+        label: tile.label,
+        orientation: multiplyQuaternions(anchor, quaternionFromEulerDegrees(tile.yawDegrees, tile.pitchDegrees, 0)),
+      };
+    }
+    const sourceYaw = (audience.yawDegrees * Math.PI) / 180;
+    const boundaryPoint: Vec3 = [Math.sin(sourceYaw) * boundaryRadius, boundaryY, Math.cos(sourceYaw) * boundaryRadius];
+    const direction = subtract(boundaryPoint, camera);
+    const boundaryYawDegrees = (Math.atan2(direction[0], direction[2]) * 180) / Math.PI;
+    const boundaryPitchDegrees = (Math.atan2(direction[1], Math.hypot(direction[0], direction[2])) * 180) / Math.PI;
+    const pitchDegrees = boundaryPitchDegrees + (isNadir ? -halfTileFov : halfTileFov);
+    return {
+      id: tile.id,
+      label: tile.label,
+      orientation: quaternionFromEulerDegrees(boundaryYawDegrees, pitchDegrees, 0),
+    };
+  });
 }
 
 export function spatialTileCameraPosition(audience: AudienceInSpace, spec: ImageSpatialSpec): Vec3 {

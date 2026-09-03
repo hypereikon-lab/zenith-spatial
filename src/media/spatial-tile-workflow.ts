@@ -89,7 +89,10 @@ export async function captureSpatialTileAtlas(
   const tileSize = clamp(Math.round(input.tileSize), 256, 1536);
   const padding = clamp(Math.round(input.padding ?? DEFAULT_PADDING), 0, Math.floor(tileSize / 8));
   const tileFovDegrees = clamp(input.tileFovDegrees ?? DEFAULT_TILE_FOV_DEGREES, 90, 130);
-  const tiles = spatialTilePlan(input.audience);
+  const tiles = spatialTilePlan(input.audience, {
+    spatialSpec: input.spatialSpec,
+    tileFovDegrees,
+  });
   const camera = audienceCameraForProjection(
     input.audience,
     input.spatialSpec.projectionMode,

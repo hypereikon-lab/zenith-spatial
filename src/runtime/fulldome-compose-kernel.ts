@@ -5,6 +5,7 @@ import type { PlateDraft } from "../domain/schema.js";
 import { canvasToBlob } from "../media/canvas-utils.js";
 import { embedZenithPlateMetadataInPngBlob } from "../media/png-zenith-provenance.js";
 import {
+  FULLDOME_BUNDLE_LAYOUT,
   arrangeFulldomeBundle,
   isFulldomeBundleSize,
   type FulldomeBundleOrientation,
@@ -12,6 +13,7 @@ import {
 } from "../plates/fulldome-bundle-arrangement.js";
 import type { PlateSketchPreviewInput, PlateSketchPreviewSession } from "../plates/plate-sketch-preview-session.js";
 import { loadPlateSketchSource, type PlateSketchImage } from "../plates/plate-sketch-sources.js";
+import type { NormalizedPlatePlacement } from "../plates/plate-placement.js";
 
 export type FulldomeDirectReference = {
   readonly filename: string;
@@ -23,11 +25,17 @@ export type FulldomeDirectReference = {
 
 export type FulldomeComposeSource = {
   readonly file: File;
+  /** Local-only locator retained in the external manifest, never embedded into the PNG. */
+  readonly source?: string;
   /** One provenance edge only: references used directly to create this source. */
   readonly directReferences?: ReadonlyArray<FulldomeDirectReference>;
+  /** Receipt for the generation that produced this source, when applicable. */
+  readonly generationReceipt?: FulldomeDirectReference;
 };
 
 export type FulldomeComposeOptions = {
+  readonly dominantSourceIndex?: number;
+  /** @deprecated Compatibility alias for pre-v2 callers. Use dominantSourceIndex. */
   readonly zenithSourceIndex?: number;
   readonly orientation?: FulldomeBundleOrientation;
   readonly projectId?: string;
@@ -36,12 +44,13 @@ export type FulldomeComposeOptions = {
 };
 
 export type FulldomeComposeManifest = {
-  readonly schema: "zenith.fulldome-compose.v1";
+  readonly schema: "zenith.fulldome-compose.v2";
   readonly createdAt: string;
   readonly projectId: string;
   readonly compositionId: string;
+  readonly layout: typeof FULLDOME_BUNDLE_LAYOUT;
   readonly orientation: FulldomeBundleOrientation;
-  readonly zenithSourceIndex: number;
+  readonly dominantSourceIndex: number;
   readonly raster: { readonly width: number; readonly height: number };
   readonly sources: ReadonlyArray<{
     readonly index: number;
@@ -51,7 +60,11 @@ export type FulldomeComposeManifest = {
     readonly width: number;
     readonly height: number;
     readonly sha256: string;
+    /** Local-only locator retained in the external manifest, never embedded into the PNG. */
+    readonly source?: string;
+    readonly placement: NormalizedPlatePlacement;
     readonly directReferences: ReadonlyArray<FulldomeDirectReference>;
+    readonly generationReceipt?: FulldomeDirectReference;
   }>;
   readonly output: {
     readonly filename: string;
@@ -87,15 +100,14 @@ export class FulldomeComposeError extends Data.TaggedError("FulldomeComposeError
 export function composeFulldomePlateBundlePng(
   session: Pick<PlateSketchPreviewSession, "renderHandoffCanvas">,
   sources: ReadonlyArray<FulldomeComposeSource>,
-  {
-    zenithSourceIndex = sources.length - 1,
-    orientation = "profile",
-    projectId = "project-headless",
-    compositionId = "composition-headless",
-    createdAt = new Date().toISOString(),
-  }: FulldomeComposeOptions = {},
+  options: FulldomeComposeOptions = {},
 ) {
   return Effect.gen(function* () {
+    const dominantSourceIndex = options.dominantSourceIndex ?? options.zenithSourceIndex ?? 0;
+    const orientation = options.orientation ?? "profile";
+    const projectId = options.projectId ?? "project-headless";
+    const compositionId = options.compositionId ?? "composition-headless";
+    const createdAt = options.createdAt ?? new Date().toISOString();
     const files = sources.map(({ file }) => file);
     if (!isFulldomeBundleSize(files.length)) {
       return yield* Effect.fail(
@@ -110,11 +122,23 @@ export function composeFulldomePlateBundlePng(
         new FulldomeComposeError({ operation: "validate", message: "Every fulldome source must be an image." }),
       );
     }
-    if (!Number.isInteger(zenithSourceIndex) || zenithSourceIndex < 0 || zenithSourceIndex >= files.length) {
+    if (
+      options.dominantSourceIndex !== undefined &&
+      options.zenithSourceIndex !== undefined &&
+      options.dominantSourceIndex !== options.zenithSourceIndex
+    ) {
       return yield* Effect.fail(
         new FulldomeComposeError({
           operation: "validate",
-          message: `Zenith source index ${zenithSourceIndex} is outside this ${files.length}-source bundle.`,
+          message: `dominantSourceIndex ${options.dominantSourceIndex} conflicts with legacy zenithSourceIndex ${options.zenithSourceIndex}.`,
+        }),
+      );
+    }
+    if (!Number.isInteger(dominantSourceIndex) || dominantSourceIndex < 0 || dominantSourceIndex >= files.length) {
+      return yield* Effect.fail(
+        new FulldomeComposeError({
+          operation: "validate",
+          message: `Dominant source index ${dominantSourceIndex} is outside this ${files.length}-source bundle.`,
         }),
       );
     }
@@ -134,7 +158,7 @@ export function composeFulldomePlateBundlePng(
       { concurrency: 3 },
     );
     const arrangement = yield* Effect.try({
-      try: () => arrangeFulldomeBundle(plates, { zenithIndex: zenithSourceIndex, orientation }),
+      try: () => arrangeFulldomeBundle(plates, { dominantIndex: dominantSourceIndex, orientation }),
       catch: (cause) =>
         new FulldomeComposeError({
           operation: "validate",
@@ -204,12 +228,13 @@ export function composeFulldomePlateBundlePng(
     const outputHash = yield* Effect.promise(() => sha256Blob(blob));
     const filename = `zenith-plate-sketch-${width}x${height}.png`;
     const manifest: FulldomeComposeManifest = {
-      schema: "zenith.fulldome-compose.v1",
+      schema: "zenith.fulldome-compose.v2",
       createdAt,
       projectId,
       compositionId,
+      layout: arrangement.layout,
       orientation: arrangement.orientation,
-      zenithSourceIndex,
+      dominantSourceIndex,
       raster: { width, height },
       sources: files.map((file, index) => ({
         index,
@@ -219,7 +244,10 @@ export function composeFulldomePlateBundlePng(
         width: plates[index]!.width,
         height: plates[index]!.height,
         sha256: sourceHashes[index]!,
+        ...(sources[index]!.source ? { source: sources[index]!.source } : {}),
+        placement: structuredClone(arrangement.placements[index]!),
         directReferences: deduplicateDirectReferences(sources[index]!.directReferences ?? []),
+        ...(sources[index]!.generationReceipt ? { generationReceipt: sources[index]!.generationReceipt } : {}),
       })),
       output: { filename, mime: "image/png", width, height, sha256: outputHash },
     };

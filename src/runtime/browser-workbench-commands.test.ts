@@ -9,7 +9,7 @@ import {
   selectedComposition,
 } from "../domain/project.js";
 import type { MediaAsset, PlateCommit } from "../domain/schema.js";
-import { DEFAULT_PLATE_PLACEMENTS } from "../plates/default-plate-profile.js";
+import { FULLDOME_BUNDLE_PROFILE } from "../plates/fulldome-bundle-arrangement.js";
 import type { PlateSketchPreviewInput } from "../plates/plate-sketch-preview-session.js";
 import { readZenithPlateMetadataFromPngBlob } from "../media/png-zenith-provenance.js";
 import { embedSpatialUpscalePngMetadata } from "../media/spatial-upscale-metadata.js";
@@ -28,26 +28,24 @@ import { WorkbenchService } from "./workbench-service.js";
 const NOW = "2026-08-26T12:00:00.000Z";
 
 describe("browser workbench media commands", () => {
-  test("arranges the selected curated source in the fulldome zenith slot", async () => {
+  test("arranges the selected curated source in the large upper slot", async () => {
     const document = createInitialZenithDocument({ now: NOW, projectId: "project-bundle" });
     const initial = selectedComposition(document);
-    const zenithLayerId = initial.plateDraft.frame.plateLayers[0]!.id;
+    const dominantLayerId = initial.plateDraft.frame.plateLayers[0]!.id;
     const layer = WorkbenchService.fromDocument(document);
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
-        const arranged = yield* arrangeFulldomePlateBundle({ zenithLayerId, orientation: "mirrored" });
+        const arranged = yield* arrangeFulldomePlateBundle({ dominantLayerId, orientation: "mirrored" });
         const workbench = yield* WorkbenchService;
         return { arranged, document: workbench.getSnapshot().document };
       }).pipe(Effect.provide(layer)),
     );
 
     const changed = selectedComposition(result.document);
-    expect(result.arranged.slots).toContainEqual({ layerId: zenithLayerId, slot: "zenith" });
-    expect(changed.plateDraft.frame.activeLayerId).toBe(zenithLayerId);
-    expect(changed.plateDraft.frame.plateLayers[0]!.placement.azimuth).toBeCloseTo(
-      -DEFAULT_PLATE_PLACEMENTS[2].azimuth,
-    );
+    expect(result.arranged.slots).toContainEqual({ layerId: dominantLayerId, slot: "upper-dominant" });
+    expect(changed.plateDraft.frame.activeLayerId).toBe(dominantLayerId);
+    expect(changed.plateDraft.frame.plateLayers[0]!.placement).toMatchObject(FULLDOME_BUNDLE_PROFILE["upper-dominant"]);
   });
 
   test("replaces the editable defaults with an arranged curated bundle", async () => {
@@ -97,8 +95,8 @@ describe("browser workbench media commands", () => {
         "field.png",
         "zenith.png",
       ]);
-      expect(result.prepared.slots.at(-1)?.slot).toBe("zenith");
-      expect(changed.plateDraft.frame.activeLayerId).toBe(result.prepared.zenithLayerId);
+      expect(result.prepared.slots.at(0)?.slot).toBe("upper-dominant");
+      expect(changed.plateDraft.frame.activeLayerId).toBe(result.prepared.dominantLayerId);
       expect(Object.values(result.document.project.assets).map((asset) => asset.filename)).toEqual([
         "field.png",
         "zenith.png",
@@ -205,25 +203,17 @@ describe("browser workbench media commands", () => {
       const rendered = await Effect.runPromise(
         Effect.scoped(
           prepareAndRenderFulldomePlateBundlePng(session, files, {
-            zenithSourceIndex: 2,
+            dominantSourceIndex: 2,
             orientation: "profile",
           }).pipe(Effect.provide(layer)),
         ),
       );
       const metadata = await readZenithPlateMetadataFromPngBlob(rendered.blob);
 
-      expect(rendered.bundle.slots.map(({ slot }) => slot)).toEqual([
-        "field-primary",
-        "field-secondary",
-        "zenith",
-      ]);
+      expect(rendered.bundle.slots.map(({ slot }) => slot)).toEqual(["front-left", "front-right", "upper-dominant"]);
       expect(renderedInput).not.toBeNull();
-      expect(renderedInput!.plates.map((plate) => plate.name)).toEqual([
-        "field-a.png",
-        "field-b.png",
-        "zenith-c.png",
-      ]);
-      expect(renderedInput!.placements[2]).toMatchObject(DEFAULT_PLATE_PLACEMENTS[2]);
+      expect(renderedInput!.plates.map((plate) => plate.name)).toEqual(["field-a.png", "field-b.png", "zenith-c.png"]);
+      expect(renderedInput!.placements[2]).toMatchObject(FULLDOME_BUNDLE_PROFILE["upper-dominant"]);
       expect(metadata).toMatchObject({ kind: "plate-draft", projectId: "project-automated-bundle" });
     } finally {
       vi.unstubAllGlobals();

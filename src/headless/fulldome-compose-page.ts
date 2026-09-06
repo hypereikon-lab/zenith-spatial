@@ -9,7 +9,9 @@ import {
 import { createPlateSketchPreviewSession } from "../plates/plate-sketch-preview-session.js";
 
 type BrowserComposeOptions = FulldomeComposeOptions & {
+  readonly sourceLocatorsBySource?: ReadonlyArray<string>;
   readonly directReferencesBySource?: ReadonlyArray<ReadonlyArray<FulldomeDirectReference>>;
+  readonly generationReceiptsBySource?: ReadonlyArray<FulldomeDirectReference | null>;
 };
 
 declare global {
@@ -35,7 +37,9 @@ window.zenithFulldomeCompose = async (options = {}) => {
   const files = Array.from(input.files ?? []);
   const sources = files.map((file, index) => ({
     file,
+    source: options.sourceLocatorsBySource?.[index],
     directReferences: options.directReferencesBySource?.[index] ?? [],
+    generationReceipt: options.generationReceiptsBySource?.[index] ?? undefined,
   }));
   const result = await Effect.runPromise(composeFulldomePlateBundlePng(session, sources, options));
 

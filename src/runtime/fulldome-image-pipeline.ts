@@ -8,6 +8,8 @@ export {
   arrangeFulldomeBundle,
   isFulldomeBundleSize,
   FULLDOME_BUNDLE_ORIENTATIONS,
+  FULLDOME_BUNDLE_LAYOUT,
+  FULLDOME_BUNDLE_PROFILE,
   type FulldomeBundleArrangement,
   type FulldomeBundleArrangementOptions,
   type FulldomeBundleOrientation,

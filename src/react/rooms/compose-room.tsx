@@ -119,7 +119,7 @@ export function ComposeRoom() {
   const [invertCarrierMask, setInvertCarrierMask] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   const [committing, setCommitting] = useState(false);
-  const [bundleZenithLayerId, setBundleZenithLayerId] = useState<string | null>(null);
+  const [bundleDominantLayerId, setBundleDominantLayerId] = useState<string | null>(null);
   const [bundleOrientation, setBundleOrientation] = useState<FulldomeBundleOrientation>("profile");
   const [horizonCalibrationKey, setHorizonCalibrationKey] = useState<string | null>(null);
   const canvasStack = useRef<HTMLDivElement>(null);
@@ -131,9 +131,9 @@ export function ComposeRoom() {
     .map((layer) => `${layer.id}:${layer.source.assetId ?? "missing"}:${layer.visible}`)
     .join("|");
   const fulldomeBundleReady = isFulldomeBundleSize(visibleLayers.length);
-  const resolvedBundleZenithLayerId = visibleLayers.some((layer) => layer.id === bundleZenithLayerId)
-    ? bundleZenithLayerId
-    : (visibleLayers.at(-1)?.id ?? null);
+  const resolvedBundleDominantLayerId = visibleLayers.some((layer) => layer.id === bundleDominantLayerId)
+    ? bundleDominantLayerId
+    : (visibleLayers.at(0)?.id ?? null);
   const currentHorizonCalibrationKey = `${snapshot.document.project.id}:${composition.id}:${draft.projectionMode}`;
   const horizonCalibrationEnabled = horizonCalibrationKey === currentHorizonCalibrationKey;
   const setHorizonCalibrationEnabled = (enabled: boolean) =>
@@ -184,12 +184,12 @@ export function ComposeRoom() {
       try {
         const prepared = await run(
           prepareFulldomePlateBundle(files, {
-            zenithSourceIndex: files.length - 1,
+            dominantSourceIndex: 0,
             orientation: bundleOrientation,
           }),
         );
-        setBundleZenithLayerId(prepared.zenithLayerId);
-        setStatus(`${files.length}-source fulldome bundle loaded. The final imported source owns the zenith slot.`);
+        setBundleDominantLayerId(prepared.dominantLayerId);
+        setStatus(`${files.length}-source fulldome bundle loaded. The first source is large and upper.`);
       } catch (error) {
         reportError(error, "fulldome-bundle-import");
       }
@@ -754,16 +754,16 @@ export function ComposeRoom() {
   }
 
   async function arrangeCurrentFulldomeBundle() {
-    if (!resolvedBundleZenithLayerId) return;
+    if (!resolvedBundleDominantLayerId) return;
     try {
       await run(
         arrangeFulldomePlateBundle({
-          zenithLayerId: resolvedBundleZenithLayerId,
+          dominantLayerId: resolvedBundleDominantLayerId,
           orientation: bundleOrientation,
         }),
       );
-      const zenithName = visibleLayers.find((layer) => layer.id === resolvedBundleZenithLayerId)?.name ?? "source";
-      setStatus(`${visibleLayers.length}-source fulldome bundle arranged with ${zenithName} in the zenith slot.`);
+      const dominantName = visibleLayers.find((layer) => layer.id === resolvedBundleDominantLayerId)?.name ?? "source";
+      setStatus(`${visibleLayers.length}-source fulldome bundle arranged with ${dominantName} large and upper.`);
     } catch (error) {
       reportError(error, "fulldome-bundle");
     }
@@ -875,8 +875,9 @@ export function ComposeRoom() {
             Remove selected
           </button>
           <p className="technical-note">
-            A curated bundle replaces the editable sources with exactly 2 or 3 images and assigns the final imported
-            source to the zenith slot. Drop or paste remains available for ordinary source import.
+            A curated bundle replaces the editable sources with exactly 2 or 3 images. The first source is initially
+            placed large and upper; the others remain substantial and occupy the front. Drop or paste remains available
+            for ordinary source import.
           </p>
         </div>
 
@@ -1181,11 +1182,11 @@ export function ComposeRoom() {
             <div className="panel-section">
               <h3>Fulldome bundle</h3>
               <label className="field-row">
-                <span>Zenith source</span>
+                <span>Large upper source</span>
                 <select
-                  value={resolvedBundleZenithLayerId ?? ""}
+                  value={resolvedBundleDominantLayerId ?? ""}
                   disabled={!fulldomeBundleReady}
-                  onChange={(event) => setBundleZenithLayerId(event.currentTarget.value)}
+                  onChange={(event) => setBundleDominantLayerId(event.currentTarget.value)}
                 >
                   {visibleLayers.map((layer) => (
                     <option key={layer.id} value={layer.id}>
@@ -1201,21 +1202,21 @@ export function ComposeRoom() {
                   disabled={!fulldomeBundleReady}
                   onChange={(event) => setBundleOrientation(event.currentTarget.value as FulldomeBundleOrientation)}
                 >
-                  <option value="profile">Plate 03 profile</option>
+                  <option value="profile">Upper + front</option>
                   <option value="mirrored">Mirrored profile</option>
                 </select>
               </label>
               <button
                 className="button full"
                 type="button"
-                disabled={!fulldomeBundleReady || !resolvedBundleZenithLayerId}
+                disabled={!fulldomeBundleReady || !resolvedBundleDominantLayerId}
                 onClick={() => void arrangeCurrentFulldomeBundle()}
               >
                 Arrange fulldome bundle
               </button>
               <p className="technical-note">
-                Requires exactly 2 or 3 visible sources. Curation selects the zenith source; Zenith applies only
-                deterministic spatial geometry.
+                Requires exactly 2 or 3 visible sources. Curation selects the large upper image; Zenith aligns its upper
+                edge radially toward the centre and places the remaining images across the front.
               </p>
             </div>
 

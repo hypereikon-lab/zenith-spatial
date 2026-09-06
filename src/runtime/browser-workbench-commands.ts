@@ -57,7 +57,7 @@ export type LoadedCompositionPlate = PlateSketchImage & {
 };
 
 export type FulldomePlateBundleResult = {
-  readonly zenithLayerId: string;
+  readonly dominantLayerId: string;
   readonly orientation: FulldomeBundleOrientation;
   readonly slots: ReadonlyArray<{ readonly layerId: string; readonly slot: FulldomeBundleSlot }>;
 };
@@ -233,9 +233,9 @@ export function importPlateSources(
         { replace },
       );
       if (fulldomeArrangement) {
-        const zenithLayerId = imported[fulldomeArrangement.activeIndex]!.layer.id;
-        selectedComposition(next).plateDraft.frame.activeLayerId = zenithLayerId;
-        next.workspace.selectedLayerId = zenithLayerId;
+        const dominantLayerId = imported[fulldomeArrangement.activeIndex]!.layer.id;
+        selectedComposition(next).plateDraft.frame.activeLayerId = dominantLayerId;
+        next.workspace.selectedLayerId = dominantLayerId;
       }
       return next;
     });
@@ -253,9 +253,9 @@ export function importPlateSources(
 export function prepareFulldomePlateBundle(
   files: ReadonlyArray<File>,
   {
-    zenithSourceIndex = files.length - 1,
+    dominantSourceIndex = 0,
     orientation = "profile",
-  }: { readonly zenithSourceIndex?: number; readonly orientation?: FulldomeBundleOrientation } = {},
+  }: { readonly dominantSourceIndex?: number; readonly orientation?: FulldomeBundleOrientation } = {},
 ) {
   return Effect.gen(function* () {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
@@ -267,37 +267,39 @@ export function prepareFulldomePlateBundle(
         }),
       );
     }
-    if (!Number.isInteger(zenithSourceIndex) || zenithSourceIndex < 0 || zenithSourceIndex >= imageFiles.length) {
+    if (!Number.isInteger(dominantSourceIndex) || dominantSourceIndex < 0 || dominantSourceIndex >= imageFiles.length) {
       return yield* Effect.fail(
         new BrowserWorkbenchError({
           operation: "arrange",
-          message: `Zenith source index ${zenithSourceIndex} is outside this ${imageFiles.length}-source bundle.`,
+          message: `Dominant source index ${dominantSourceIndex} is outside this ${imageFiles.length}-source bundle.`,
         }),
       );
     }
     const imported = yield* importPlateSources(imageFiles, {
       replace: true,
-      fulldomeLayout: { zenithIndex: zenithSourceIndex, orientation },
+      fulldomeLayout: { dominantIndex: dominantSourceIndex, orientation },
     });
     const workbench = yield* WorkbenchService;
     const current = selectedComposition(workbench.getSnapshot().document);
-    const zenithAssetId = imported[zenithSourceIndex]!.id;
-    const zenithLayer = current.plateDraft.frame.plateLayers.find((layer) => layer.source.assetId === zenithAssetId);
-    if (!zenithLayer) {
+    const dominantAssetId = imported[dominantSourceIndex]!.id;
+    const dominantLayer = current.plateDraft.frame.plateLayers.find(
+      (layer) => layer.source.assetId === dominantAssetId,
+    );
+    if (!dominantLayer) {
       return yield* Effect.fail(
         new BrowserWorkbenchError({
           operation: "state",
-          message: "The imported zenith source is missing from the selected composition.",
+          message: "The imported dominant source is missing from the selected composition.",
         }),
       );
     }
-    const zenithLayerIndex = current.plateDraft.frame.plateLayers.findIndex((layer) => layer.id === zenithLayer.id);
+    const dominantLayerIndex = current.plateDraft.frame.plateLayers.findIndex((layer) => layer.id === dominantLayer.id);
     const arrangement = arrangeFulldomeBundle(
       current.plateDraft.frame.plateLayers.map((layer) => ({ aspect: layer.source.aspect })),
-      { zenithIndex: zenithLayerIndex, orientation },
+      { dominantIndex: dominantLayerIndex, orientation },
     );
     return {
-      zenithLayerId: zenithLayer.id,
+      dominantLayerId: dominantLayer.id,
       orientation: arrangement.orientation,
       slots: current.plateDraft.frame.plateLayers.map((layer, index) => ({
         layerId: layer.id,
@@ -392,10 +394,10 @@ export function replacePlateDraft(draft: PlateDraft) {
 
 /** Applies the curated pair/trio fulldome profile to the selected composition. */
 export function arrangeFulldomePlateBundle({
-  zenithLayerId,
+  dominantLayerId,
   orientation = "profile",
 }: {
-  readonly zenithLayerId: string;
+  readonly dominantLayerId: string;
   readonly orientation?: FulldomeBundleOrientation;
 }) {
   return Effect.gen(function* () {
@@ -410,29 +412,29 @@ export function arrangeFulldomePlateBundle({
         }),
       );
     }
-    const zenithIndex = visibleLayers.findIndex((layer) => layer.id === zenithLayerId);
-    if (zenithIndex < 0) {
+    const dominantIndex = visibleLayers.findIndex((layer) => layer.id === dominantLayerId);
+    if (dominantIndex < 0) {
       return yield* Effect.fail(
         new BrowserWorkbenchError({
           operation: "arrange",
-          message: "Choose one visible source for the zenith slot.",
+          message: "Choose one visible source for the upper dominant slot.",
         }),
       );
     }
     const arrangement = arrangeFulldomeBundle(
       visibleLayers.map((layer) => ({ aspect: layer.source.aspect })),
-      { zenithIndex, orientation },
+      { dominantIndex, orientation },
     );
     const draft = structuredClone(current.plateDraft);
     visibleLayers.forEach((layer, index) => {
       const target = draft.frame.plateLayers.find((candidate) => candidate.id === layer.id);
       if (target) target.placement = structuredClone(arrangement.placements[index]!);
     });
-    draft.frame.activeLayerId = zenithLayerId;
+    draft.frame.activeLayerId = dominantLayerId;
     const now = new Date(yield* Clock.currentTimeMillis).toISOString();
     yield* workbench.updateDocument((document) => replaceSelectedCompositionDraft(document, draft, now));
     return {
-      zenithLayerId,
+      dominantLayerId,
       orientation: arrangement.orientation,
       slots: visibleLayers.map((layer, index) => ({ layerId: layer.id, slot: arrangement.slots[index]! })),
     } satisfies FulldomePlateBundleResult;
@@ -556,7 +558,7 @@ export function exactPlateDraftPreviewInput(
 export function prepareAndRenderFulldomePlateBundlePng(
   session: Pick<PlateSketchPreviewSession, "renderHandoffCanvas">,
   files: ReadonlyArray<File>,
-  options: { readonly zenithSourceIndex?: number; readonly orientation?: FulldomeBundleOrientation } = {},
+  options: { readonly dominantSourceIndex?: number; readonly orientation?: FulldomeBundleOrientation } = {},
 ) {
   return Effect.gen(function* () {
     const bundle = yield* prepareFulldomePlateBundle(files, options);

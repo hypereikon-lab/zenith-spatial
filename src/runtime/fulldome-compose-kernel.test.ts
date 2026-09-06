@@ -56,6 +56,7 @@ describe("workbench-free fulldome compose kernel", () => {
         session,
         files.map((file, index) => ({
           file,
+          source: `/local/${file.name}`,
           directReferences:
             index === 0
               ? [
@@ -63,9 +64,13 @@ describe("workbench-free fulldome compose kernel", () => {
                   { filename: "duplicate.jpg", sha256: "same" },
                 ]
               : [],
+          generationReceipt:
+            index === 0
+              ? { filename: "runway-generation.json", mime: "application/json", sha256: "receipt-sha" }
+              : undefined,
         })),
         {
-          zenithSourceIndex: 2,
+          dominantSourceIndex: 2,
           orientation: "profile",
           projectId: "project-kernel",
           compositionId: "composition-kernel",
@@ -77,8 +82,20 @@ describe("workbench-free fulldome compose kernel", () => {
 
     expect(renderedInput).not.toBeNull();
     expect(renderedInput!.plates.map((plate) => plate.name)).toEqual(["field-a.png", "field-b.png", "zenith-c.png"]);
-    expect(result.manifest.sources.map(({ slot }) => slot)).toEqual(["field-primary", "field-secondary", "zenith"]);
+    expect(result.manifest).toMatchObject({
+      schema: "zenith.fulldome-compose.v2",
+      layout: "upper-dominant-radial-v3",
+      dominantSourceIndex: 2,
+    });
+    expect(result.manifest.sources.map(({ slot }) => slot)).toEqual(["front-left", "front-right", "upper-dominant"]);
+    expect(result.manifest.sources[2]!.placement).toMatchObject({ azimuth: 0, scale: 2.08, spin: 0 });
     expect(result.manifest.sources[0]!.directReferences).toEqual([{ filename: "direct.jpg", sha256: "same" }]);
+    expect(result.manifest.sources[0]!.source).toBe("/local/field-a.png");
+    expect(result.manifest.sources[0]!.generationReceipt).toEqual({
+      filename: "runway-generation.json",
+      mime: "application/json",
+      sha256: "receipt-sha",
+    });
     expect(result.manifest.output.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(metadata).toMatchObject({
       kind: "plate-draft",

@@ -15,7 +15,7 @@ if (args.dryRun) {
       {
         mode: "dry-run",
         sources: job.sources,
-        zenithSourceIndex: job.zenithSourceIndex,
+        dominantSourceIndex: job.dominantSourceIndex,
         orientation: job.orientation,
         output,
       },

@@ -1,0 +1,13 @@
+{
+  "schema": "zenith.image-campaign.v1",
+  "campaignId": "inside-valdivia-example",
+  "ledger": "./campaign-ledger.json",
+  "states": [
+    {
+      "id": "E01",
+      "runwayJob": "./runway/E01/runway-job.json",
+      "composeJob": "./plates/E01/compose-job.json",
+      "chatgptJob": "./chatgpt/E01/chatgpt-job.json"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "recipeId": "D01",
+  "model": "gpt-image-2",
+  "invocation": "runway-mcp",
+  "ratio": "16:9",
+  "count": 2,
+  "requireReferenceReview": true,
+  "referenceReviewReceipt": "/absolute/path/reference-review.json",
+  "promptFile": "/absolute/path/D01-prompt.txt",
+  "references": [
+    { "path": "/absolute/path/atlas-primary-01.jpg", "role": "primary_01" },
+    { "path": "/absolute/path/atlas-primary-02.jpg", "role": "primary_02" },
+    { "path": "/absolute/path/atlas-donor-01.jpg", "role": "donor_01" }
+  ],
+  "outputs": [
+    { "path": "/absolute/path/D01/01.png", "assetId": "fill-after-runway-mcp" },
+    { "path": "/absolute/path/D01/02.png", "assetId": "fill-after-runway-mcp" }
+  ],
+  "providerTaskIds": ["fill-after-runway-mcp"],
+  "creditsUsed": 40,
+  "requestReceipt": "/absolute/path/D01/runway-request.json",
+  "generationReceipt": "/absolute/path/D01/runway-generation.json"
+}

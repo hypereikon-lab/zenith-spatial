@@ -15,7 +15,7 @@ export function normalizeFulldomeComposeJob(raw) {
   const sources = raw.sources.map((source, index) => {
     if (!source || typeof source !== "object") throw new TypeError(`sources[${index}] must be an object.`);
     const path = existingFile(source.path, `sources[${index}].path`);
-    const directReferences = Array.isArray(source.directReferences)
+    const declaredDirectReferences = Array.isArray(source.directReferences)
       ? source.directReferences.map((reference, referenceIndex) => {
           const referencePath = existingFile(
             typeof reference === "string" ? reference : reference?.path,
@@ -24,11 +24,29 @@ export function normalizeFulldomeComposeJob(raw) {
           return { path: referencePath };
         })
       : [];
-    return { path, directReferences };
+    const generationReceiptPath =
+      typeof source.generationReceipt === "string" ? source.generationReceipt : source.generationReceipt?.path;
+    const generationReceipt = generationReceiptPath
+      ? { path: existingFile(generationReceiptPath, `sources[${index}].generationReceipt`) }
+      : null;
+    const receiptDirectReferences = generationReceipt
+      ? directReferencesFromGenerationReceipt(generationReceipt.path, path, index)
+      : [];
+    const directReferences = deduplicatePathsByHash([...declaredDirectReferences, ...receiptDirectReferences]);
+    return { path, directReferences, generationReceipt };
   });
-  const zenithSourceIndex = raw.zenithSourceIndex ?? sources.length - 1;
-  if (!Number.isInteger(zenithSourceIndex) || zenithSourceIndex < 0 || zenithSourceIndex >= sources.length) {
-    throw new RangeError(`zenithSourceIndex ${zenithSourceIndex} is outside this ${sources.length}-source bundle.`);
+  if (
+    raw.dominantSourceIndex !== undefined &&
+    raw.zenithSourceIndex !== undefined &&
+    raw.dominantSourceIndex !== raw.zenithSourceIndex
+  ) {
+    throw new RangeError(
+      `dominantSourceIndex ${raw.dominantSourceIndex} conflicts with legacy zenithSourceIndex ${raw.zenithSourceIndex}.`,
+    );
+  }
+  const dominantSourceIndex = raw.dominantSourceIndex ?? raw.zenithSourceIndex ?? 0;
+  if (!Number.isInteger(dominantSourceIndex) || dominantSourceIndex < 0 || dominantSourceIndex >= sources.length) {
+    throw new RangeError(`dominantSourceIndex ${dominantSourceIndex} is outside this ${sources.length}-source bundle.`);
   }
   const orientation = raw.orientation ?? "profile";
   if (orientation !== "profile" && orientation !== "mirrored") {
@@ -36,9 +54,9 @@ export function normalizeFulldomeComposeJob(raw) {
   }
 
   return {
-    schema: "zenith.fulldome-compose.request.v1",
+    schema: "zenith.fulldome-compose.request.v2",
     sources,
-    zenithSourceIndex,
+    dominantSourceIndex,
     orientation,
     projectId: nonEmptyString(raw.projectId) || "project-headless",
     compositionId: nonEmptyString(raw.compositionId) || `composition-${randomUUID()}`,
@@ -81,18 +99,30 @@ export class FulldomeHeadlessRenderer {
         })),
       ),
     );
+    const generationReceiptsBySource = job.sources.map(({ generationReceipt }) =>
+      generationReceipt
+        ? {
+            filename: basename(generationReceipt.path),
+            mime: "application/json",
+            sha256: sha256File(generationReceipt.path),
+            source: generationReceipt.path,
+          }
+        : null,
+    );
     await runAgentBrowser(
       this.#session,
       ["upload", "#zenith-fulldome-sources", ...job.sources.map(({ path }) => path)],
       60_000,
     );
     const options = {
-      zenithSourceIndex: job.zenithSourceIndex,
+      dominantSourceIndex: job.dominantSourceIndex,
       orientation: job.orientation,
       projectId: job.projectId,
       compositionId: job.compositionId,
       createdAt: job.createdAt,
+      sourceLocatorsBySource: job.sources.map(({ path }) => path),
       directReferencesBySource,
+      generationReceiptsBySource,
     };
     const result = parseJson(
       await runAgentBrowser(
@@ -193,6 +223,53 @@ function deduplicateByHash(references) {
   return references.filter((reference) => {
     if (seen.has(reference.sha256)) return false;
     seen.add(reference.sha256);
+    return true;
+  });
+}
+
+function directReferencesFromGenerationReceipt(receiptPath, generatedSourcePath, sourceIndex) {
+  let receipt;
+  try {
+    receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+  } catch {
+    throw new TypeError(`sources[${sourceIndex}].generationReceipt is not valid JSON: ${receiptPath}`);
+  }
+  const generatedSha256 = sha256File(generatedSourcePath);
+  let outputs;
+  let references;
+  if (receipt?.schema === "zenith.runway-image-generation.v1") {
+    outputs = receipt.outputs;
+    references = receipt.references;
+  } else if (receipt?.schema === "zenith.chatgpt-image-generation.v2") {
+    outputs = receipt.output ? [receipt.output] : [];
+    references = receipt.attachments;
+  } else {
+    throw new TypeError(
+      `sources[${sourceIndex}].generationReceipt must be a finalized Runway v1 or ChatGPT Images v2 receipt.`,
+    );
+  }
+  if (!Array.isArray(outputs) || !outputs.some((output) => output?.sha256 === generatedSha256)) {
+    throw new Error(`sources[${sourceIndex}].generationReceipt did not produce ${generatedSourcePath}.`);
+  }
+  if (!Array.isArray(references) || references.length === 0) {
+    throw new RangeError(`sources[${sourceIndex}].generationReceipt contains no direct image references.`);
+  }
+  return references.map((reference, referenceIndex) => {
+    const label = `sources[${sourceIndex}].generationReceipt references[${referenceIndex}]`;
+    const path = existingFile(reference?.source, `${label}.source`);
+    if (reference.sha256 && sha256File(path) !== reference.sha256) {
+      throw new Error(`${label} changed after generation: ${path}`);
+    }
+    return { path };
+  });
+}
+
+function deduplicatePathsByHash(references) {
+  const seen = new Set();
+  return references.filter(({ path }) => {
+    const digest = sha256File(path);
+    if (seen.has(digest)) return false;
+    seen.add(digest);
     return true;
   });
 }

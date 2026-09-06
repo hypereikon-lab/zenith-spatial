@@ -1,0 +1,26 @@
+{
+  "recipeId": "D13",
+  "url": "https://chatgpt.com/images",
+  "plateSketch": "/absolute/path/00-Image1-plate-sketch.png",
+  "plateManifest": "/absolute/path/00-Image1-plate-sketch.png.manifest.json",
+  "requireReferenceReview": true,
+  "referenceReviewScope": "source-references",
+  "referenceReviewReceipt": "/absolute/path/reference-review.json",
+  "contextPolicy": {
+    "mode": "hybrid",
+    "sceneContextReceipt": "/absolute/path/scene-context-selection.json",
+    "stateIndex": 0,
+    "additionalReferences": [
+      {
+        "path": "/absolute/path/drive-curated-scene-reference.jpg",
+        "sourceKind": "google-drive",
+        "sceneIds": ["I.4"]
+      }
+    ]
+  },
+  "promptFile": "/absolute/path/prompt.txt",
+  "output": "/absolute/path/generated-domemaster.png",
+  "requestReceipt": "/absolute/path/chatgpt-request.json",
+  "generationReceipt": "/absolute/path/chatgpt-generation.json",
+  "conversationUrl": "https://chatgpt.com/c/add-after-generation"
+}

@@ -42,7 +42,50 @@ Import the narrow facade at `src/runtime/fulldome-image-pipeline.ts` rather than
 The renderer remains browser/WebGPU-owned. The caller supplies the existing preview session and receives the PNG
 `Blob`; it can then download those bytes or pass them to the next authorized stage. The operation accepts ordinary
 browser `File` values, so a Drive adapter only needs to materialize each selected binary with its original filename
-and MIME type. Drive credentials, folder traversal, and GPT Image 2 submission remain outside Zenith.
+and MIME type. Drive credentials and folder traversal remain outside Zenith.
+
+## ChatGPT Images bridge
+
+`scripts/chatgpt-image-bridge.mjs` supplies the narrow browser-protocol bridge needed while GPT Image 2.5 beta is
+available through the authenticated ChatGPT product rather than a stable public API. It does not use mouse
+coordinates, Finder, screenshots, or visual element discovery. It drives a dedicated Chrome tab through CDP and
+uses stable DOM contracts:
+
+1. Open ChatGPT Images with an already authenticated Chrome profile.
+2. Preserve the prompt already present in the composer, or fill it from `promptFile`.
+3. Assign the Plate Sketch alone so it is deterministically `Image1`.
+4. Assign source and provenance files in manifest order.
+5. Read the attachment names back from the DOM and refuse to continue on any mismatch.
+6. With `--send`, submit once, wait for the completed generated image, and download the original response bytes.
+7. Write a receipt next to the output with the exact prompt, hash, ordered inputs, conversation URL, and dimensions.
+
+This is the programmatic equivalent of copy/paste: files are materialized directly as browser `File` objects in the
+composer. The native file picker is never opened. Literal binary clipboard paste is intentionally not the contract;
+browser clipboard image support varies by profile and permission state, while direct `FileList` assignment is
+deterministic and preserves filenames and ordering.
+
+Create a private job file from `docs/chatgpt-image-bridge.example.json`; do not commit local paths or sensitive data.
+Then validate the operation without touching the browser:
+
+```sh
+npm run chatgpt-image -- --job /absolute/path/job.json --dry-run
+```
+
+Prepare and verify the composer without spending a generation:
+
+```sh
+npm run chatgpt-image -- --job /absolute/path/job.json
+```
+
+Submit, wait, download, and record provenance:
+
+```sh
+npm run chatgpt-image -- --job /absolute/path/job.json --send
+```
+
+If `promptFile` is omitted, the bridge requires a non-empty prompt already present in the composer and never edits
+it. `expectedPromptSha256` can be added to the job for byte-level prompt verification. The bridge also refuses to
+append onto a composer that already contains files, avoiding accidental cross-run contamination.
 
 Pairs and trios intentionally share the same contract. A pair uses `zenith + field-primary`; a trio uses
 `zenith + field-primary + field-secondary`. Mirroring changes spatial coordinates and rotation but never flips source

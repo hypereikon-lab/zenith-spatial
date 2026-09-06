@@ -1,0 +1,16 @@
+{
+  "session": "zenith-chatgpt-image",
+  "browserProfile": "Profile 2",
+  "browserExecutable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "url": "https://chatgpt.com/images",
+  "plateSketch": "/absolute/path/00-Image1-plate-sketch.png",
+  "references": [
+    "/absolute/path/source-a.png",
+    "/absolute/path/source-b.png",
+    "/absolute/path/source-c.png",
+    "/absolute/path/provenance-a-01.jpg"
+  ],
+  "promptFile": "/absolute/path/prompt.txt",
+  "output": "/absolute/path/generated-domemaster.png",
+  "timeoutMs": 900000
+}

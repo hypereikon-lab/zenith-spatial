@@ -9,8 +9,18 @@ import {
   selectedComposition,
 } from "../domain/project.js";
 import type { MediaAsset, PlateCommit } from "../domain/schema.js";
+import { DEFAULT_PLATE_PLACEMENTS } from "../plates/default-plate-profile.js";
+import type { PlateSketchPreviewInput } from "../plates/plate-sketch-preview-session.js";
+import { readZenithPlateMetadataFromPngBlob } from "../media/png-zenith-provenance.js";
 import { embedSpatialUpscalePngMetadata } from "../media/spatial-upscale-metadata.js";
-import { importReviewMedia, openDefaultReviewMedia } from "./browser-workbench-commands.js";
+import {
+  arrangeFulldomePlateBundle,
+  prepareAndRenderFulldomePlateBundlePng,
+  importReviewMedia,
+  openDefaultReviewMedia,
+  prepareFulldomePlateBundle,
+  renderExactPlateDraftPng,
+} from "./browser-workbench-commands.js";
 import { IdGenerator } from "./id-service.js";
 import { MediaRepository } from "./media-repository.js";
 import { WorkbenchService } from "./workbench-service.js";
@@ -18,6 +28,208 @@ import { WorkbenchService } from "./workbench-service.js";
 const NOW = "2026-08-26T12:00:00.000Z";
 
 describe("browser workbench media commands", () => {
+  test("arranges the selected curated source in the fulldome zenith slot", async () => {
+    const document = createInitialZenithDocument({ now: NOW, projectId: "project-bundle" });
+    const initial = selectedComposition(document);
+    const zenithLayerId = initial.plateDraft.frame.plateLayers[0]!.id;
+    const layer = WorkbenchService.fromDocument(document);
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const arranged = yield* arrangeFulldomePlateBundle({ zenithLayerId, orientation: "mirrored" });
+        const workbench = yield* WorkbenchService;
+        return { arranged, document: workbench.getSnapshot().document };
+      }).pipe(Effect.provide(layer)),
+    );
+
+    const changed = selectedComposition(result.document);
+    expect(result.arranged.slots).toContainEqual({ layerId: zenithLayerId, slot: "zenith" });
+    expect(changed.plateDraft.frame.activeLayerId).toBe(zenithLayerId);
+    expect(changed.plateDraft.frame.plateLayers[0]!.placement.azimuth).toBeCloseTo(
+      -DEFAULT_PLATE_PLACEMENTS[2].azimuth,
+    );
+  });
+
+  test("replaces the editable defaults with an arranged curated bundle", async () => {
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ width: 1200, height: 800, close: vi.fn() }) as unknown as ImageBitmap),
+    );
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => ({
+        width: 0,
+        height: 0,
+        getContext: vi.fn(() => ({ drawImage: vi.fn() })),
+      })),
+    });
+    const document = createInitialZenithDocument({ now: NOW, projectId: "project-prepare-bundle" });
+    const files = [
+      new File(["FIELD"], "field.png", { type: "image/png" }),
+      new File(["ZENITH"], "zenith.png", { type: "image/png" }),
+    ];
+    const layer = Layer.mergeAll(
+      WorkbenchService.fromDocument(document),
+      MediaRepository.test({
+        createObjectUrl: (blob) => `blob:${blob.size}`,
+        revokeObjectUrl: () => undefined,
+      }),
+      IdGenerator.deterministic(["media-field", "layer-field", "media-zenith", "layer-zenith"]),
+    );
+
+    try {
+      const result = await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const prepared = yield* prepareFulldomePlateBundle(files);
+            const workbench = yield* WorkbenchService;
+            const media = yield* MediaRepository;
+            return {
+              prepared,
+              document: workbench.getSnapshot().document,
+              retainedMediaIds: yield* media.ids,
+            };
+          }).pipe(Effect.provide(layer)),
+        ),
+      );
+
+      const changed = selectedComposition(result.document);
+      expect(changed.plateDraft.frame.plateLayers.map((candidate) => candidate.name)).toEqual([
+        "field.png",
+        "zenith.png",
+      ]);
+      expect(result.prepared.slots.at(-1)?.slot).toBe("zenith");
+      expect(changed.plateDraft.frame.activeLayerId).toBe(result.prepared.zenithLayerId);
+      expect(Object.values(result.document.project.assets).map((asset) => asset.filename)).toEqual([
+        "field.png",
+        "zenith.png",
+      ]);
+      expect(result.retainedMediaIds).toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("exports the current draft through the reusable exact PNG boundary", async () => {
+    const document = createInitialZenithDocument({ now: NOW, projectId: "project-export" });
+    const composition = selectedComposition(document);
+    const png = new Blob(
+      [
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      ],
+      { type: "image/png" },
+    );
+    const canvas = {
+      width: composition.plateDraft.raster.width,
+      height: composition.plateDraft.raster.height,
+      toBlob(callback: BlobCallback) {
+        callback(png);
+      },
+    } as unknown as HTMLCanvasElement;
+    const previewInput = { plates: [{}] } as unknown as PlateSketchPreviewInput;
+    const layer = WorkbenchService.fromDocument(document);
+
+    const exported = await Effect.runPromise(
+      renderExactPlateDraftPng({ renderHandoffCanvas: async () => canvas }, previewInput).pipe(Effect.provide(layer)),
+    );
+    const metadata = await readZenithPlateMetadataFromPngBlob(exported.blob);
+
+    expect(exported.filename).toBe("zenith-plate-sketch-1920x1920.png");
+    expect(metadata).toMatchObject({
+      kind: "plate-draft",
+      projectId: "project-export",
+      compositionId: composition.id,
+    });
+  });
+
+  test("prepares and renders a curated trio without depending on React state", async () => {
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ width: 1200, height: 800, close: vi.fn() }) as unknown as ImageBitmap),
+    );
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => ({
+        width: 0,
+        height: 0,
+        getContext: vi.fn(() => ({ drawImage: vi.fn() })),
+      })),
+    });
+    const document = createInitialZenithDocument({ now: NOW, projectId: "project-automated-bundle" });
+    const files = [
+      new File(["A"], "field-a.png", { type: "image/png" }),
+      new File(["B"], "field-b.png", { type: "image/png" }),
+      new File(["C"], "zenith-c.png", { type: "image/png" }),
+    ];
+    const outputPng = new Blob(
+      [
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      ],
+      { type: "image/png" },
+    );
+    let renderedInput: PlateSketchPreviewInput | null = null;
+    const canvas = {
+      width: 1920,
+      height: 1920,
+      toBlob(callback: BlobCallback) {
+        callback(outputPng);
+      },
+    } as unknown as HTMLCanvasElement;
+    const session = {
+      renderHandoffCanvas: async (input: PlateSketchPreviewInput) => {
+        renderedInput = input;
+        return canvas;
+      },
+    };
+    const layer = Layer.mergeAll(
+      WorkbenchService.fromDocument(document),
+      MediaRepository.test({
+        createObjectUrl: (blob) => `blob:${blob.size}`,
+        revokeObjectUrl: () => undefined,
+      }),
+      IdGenerator.deterministic([
+        "media-field-a",
+        "layer-field-a",
+        "media-field-b",
+        "layer-field-b",
+        "media-zenith-c",
+        "layer-zenith-c",
+      ]),
+    );
+
+    try {
+      const rendered = await Effect.runPromise(
+        Effect.scoped(
+          prepareAndRenderFulldomePlateBundlePng(session, files, {
+            zenithSourceIndex: 2,
+            orientation: "profile",
+          }).pipe(Effect.provide(layer)),
+        ),
+      );
+      const metadata = await readZenithPlateMetadataFromPngBlob(rendered.blob);
+
+      expect(rendered.bundle.slots.map(({ slot }) => slot)).toEqual([
+        "field-primary",
+        "field-secondary",
+        "zenith",
+      ]);
+      expect(renderedInput).not.toBeNull();
+      expect(renderedInput!.plates.map((plate) => plate.name)).toEqual([
+        "field-a.png",
+        "field-b.png",
+        "zenith-c.png",
+      ]);
+      expect(renderedInput!.placements[2]).toMatchObject(DEFAULT_PLATE_PLACEMENTS[2]);
+      expect(metadata).toMatchObject({ kind: "plate-draft", projectId: "project-automated-bundle" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("opens the bundled demo without requiring a file or duplicating it", async () => {
     const document = createInitialZenithDocument({ now: NOW, projectId: "project-demo-command" });
     const layer = WorkbenchService.fromDocument(document);

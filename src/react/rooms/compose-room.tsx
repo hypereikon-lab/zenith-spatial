@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { defaultImageSpatialSpec, selectedComposition } from "../../domain/project.js";
+import { selectedComposition } from "../../domain/project.js";
 import type { PlateDraft } from "../../domain/schema.js";
 import {
   audienceCameraForProjection,
@@ -34,8 +34,8 @@ import {
 import { SOURCE_PROJECTION_MODES, type SourceProjectionMode } from "../../lib/shared/contracts/projection-profile.js";
 import { downloadBlob } from "../../media/canvas-utils.js";
 import { imageFilesFromClipboard } from "../../media/browser-image-files.js";
-import { embedZenithPlateMetadataInPngBlob } from "../../media/png-zenith-provenance.js";
 import { arrangePlateSketchDefaults, defaultPlateSketchPlacement } from "../../plates/plate-sketch-arrangement.js";
+import { isFulldomeBundleSize, type FulldomeBundleOrientation } from "../../plates/fulldome-bundle-arrangement.js";
 import {
   beginPlateSketchEditorDrag,
   hitTestPlateSketchEditor,
@@ -69,10 +69,13 @@ import {
   changeProjection,
   changeProjectionGeometry,
   commitPlate,
+  arrangeFulldomePlateBundle,
   importPlateSources,
   loadDefaultPlateSources,
   loadSelectedCompositionPlates,
+  prepareFulldomePlateBundle,
   removePlateSource,
+  renderExactPlateDraftPng,
   replacePlateDraft,
   type LoadedCompositionPlate,
 } from "../../runtime/browser-workbench-commands.js";
@@ -116,14 +119,21 @@ export function ComposeRoom() {
   const [invertCarrierMask, setInvertCarrierMask] = useState(false);
   const [dropActive, setDropActive] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [bundleZenithLayerId, setBundleZenithLayerId] = useState<string | null>(null);
+  const [bundleOrientation, setBundleOrientation] = useState<FulldomeBundleOrientation>("profile");
   const [horizonCalibrationKey, setHorizonCalibrationKey] = useState<string | null>(null);
   const canvasStack = useRef<HTMLDivElement>(null);
   const plateInput = useRef<HTMLInputElement>(null);
+  const bundleInput = useRef<HTMLInputElement>(null);
   const gesture = useRef<ActiveGesture | null>(null);
   const renderSerial = useRef(0);
   const sourceKey = draft.frame.plateLayers
     .map((layer) => `${layer.id}:${layer.source.assetId ?? "missing"}:${layer.visible}`)
     .join("|");
+  const fulldomeBundleReady = isFulldomeBundleSize(visibleLayers.length);
+  const resolvedBundleZenithLayerId = visibleLayers.some((layer) => layer.id === bundleZenithLayerId)
+    ? bundleZenithLayerId
+    : (visibleLayers.at(-1)?.id ?? null);
   const currentHorizonCalibrationKey = `${snapshot.document.project.id}:${composition.id}:${draft.projectionMode}`;
   const horizonCalibrationEnabled = horizonCalibrationKey === currentHorizonCalibrationKey;
   const setHorizonCalibrationEnabled = (enabled: boolean) =>
@@ -166,6 +176,25 @@ export function ComposeRoom() {
       }
     },
     [reportError, run],
+  );
+
+  const importBundleFiles = useCallback(
+    async (files: ReadonlyArray<File>) => {
+      setStatus(`Preparing ${files.length}-source fulldome bundle…`);
+      try {
+        const prepared = await run(
+          prepareFulldomePlateBundle(files, {
+            zenithSourceIndex: files.length - 1,
+            orientation: bundleOrientation,
+          }),
+        );
+        setBundleZenithLayerId(prepared.zenithLayerId);
+        setStatus(`${files.length}-source fulldome bundle loaded. The final imported source owns the zenith slot.`);
+      } catch (error) {
+        reportError(error, "fulldome-bundle-import");
+      }
+    },
+    [bundleOrientation, reportError, run],
   );
 
   useEffect(() => {
@@ -716,31 +745,27 @@ export function ComposeRoom() {
   async function downloadCurrentPlate() {
     if (!session || !previewInput) return;
     try {
-      const handoff = await session.renderHandoffCanvas(previewInput, draft.raster);
-      const encodedBlob = await new Promise<Blob>((resolve, reject) =>
-        handoff.toBlob((result) => (result ? resolve(result) : reject(new Error("PNG encoding failed."))), "image/png"),
-      );
-      const spatialSpec = {
-        ...defaultImageSpatialSpec(draft),
-        sourceWidth: draft.raster.width,
-        sourceHeight: draft.raster.height,
-        sourceAspectRatio: draft.raster.width / draft.raster.height,
-      };
-      const blob = await embedZenithPlateMetadataInPngBlob(encodedBlob, {
-        version: 1,
-        kind: "plate-draft",
-        projectId: snapshot.document.project.id,
-        compositionId: composition.id,
-        plateCommitId: null,
-        createdAt: new Date().toISOString(),
-        draft: structuredClone(draft),
-        spatialSpec,
-        provenance: null,
-      });
-      downloadBlob(blob, `zenith-plate-sketch-${draft.raster.width}x${draft.raster.height}.png`);
+      const exported = await run(renderExactPlateDraftPng(session, previewInput));
+      downloadBlob(exported.blob, exported.filename);
       setStatus("Exact Plate Sketch PNG downloaded with Zenith spatial metadata.");
     } catch (error) {
       reportError(error, "plate-download");
+    }
+  }
+
+  async function arrangeCurrentFulldomeBundle() {
+    if (!resolvedBundleZenithLayerId) return;
+    try {
+      await run(
+        arrangeFulldomePlateBundle({
+          zenithLayerId: resolvedBundleZenithLayerId,
+          orientation: bundleOrientation,
+        }),
+      );
+      const zenithName = visibleLayers.find((layer) => layer.id === resolvedBundleZenithLayerId)?.name ?? "source";
+      setStatus(`${visibleLayers.length}-source fulldome bundle arranged with ${zenithName} in the zenith slot.`);
+    } catch (error) {
+      reportError(error, "fulldome-bundle");
     }
   }
 
@@ -824,6 +849,20 @@ export function ComposeRoom() {
               event.currentTarget.value = "";
             }}
           />
+          <button className="button full" type="button" onClick={() => bundleInput.current?.click()}>
+            Load curated bundle
+          </button>
+          <input
+            ref={bundleInput}
+            className="visually-hidden"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={(event) => {
+              void importBundleFiles(Array.from(event.currentTarget.files ?? []));
+              event.currentTarget.value = "";
+            }}
+          />
           <button
             className="button ghost full"
             type="button"
@@ -835,7 +874,10 @@ export function ComposeRoom() {
           >
             Remove selected
           </button>
-          <p className="technical-note">Drop images on the canvas or paste image pixels from the clipboard.</p>
+          <p className="technical-note">
+            A curated bundle replaces the editable sources with exactly 2 or 3 images and assigns the final imported
+            source to the zenith slot. Drop or paste remains available for ordinary source import.
+          </p>
         </div>
 
         <div className="panel-section">
@@ -1134,6 +1176,47 @@ export function ComposeRoom() {
                   Clear warp
                 </button>
               </div>
+            </div>
+
+            <div className="panel-section">
+              <h3>Fulldome bundle</h3>
+              <label className="field-row">
+                <span>Zenith source</span>
+                <select
+                  value={resolvedBundleZenithLayerId ?? ""}
+                  disabled={!fulldomeBundleReady}
+                  onChange={(event) => setBundleZenithLayerId(event.currentTarget.value)}
+                >
+                  {visibleLayers.map((layer) => (
+                    <option key={layer.id} value={layer.id}>
+                      {layer.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-row">
+                <span>Orientation</span>
+                <select
+                  value={bundleOrientation}
+                  disabled={!fulldomeBundleReady}
+                  onChange={(event) => setBundleOrientation(event.currentTarget.value as FulldomeBundleOrientation)}
+                >
+                  <option value="profile">Plate 03 profile</option>
+                  <option value="mirrored">Mirrored profile</option>
+                </select>
+              </label>
+              <button
+                className="button full"
+                type="button"
+                disabled={!fulldomeBundleReady || !resolvedBundleZenithLayerId}
+                onClick={() => void arrangeCurrentFulldomeBundle()}
+              >
+                Arrange fulldome bundle
+              </button>
+              <p className="technical-note">
+                Requires exactly 2 or 3 visible sources. Curation selects the zenith source; Zenith applies only
+                deterministic spatial geometry.
+              </p>
             </div>
 
             <div className="panel-section">

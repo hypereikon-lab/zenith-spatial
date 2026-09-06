@@ -28,6 +28,13 @@ import { readSpatialUpscalePngMetadata } from "../media/spatial-upscale-metadata
 import { readVideoDimensions } from "../media/video-source.js";
 import { defaultPlateSketchPlacement } from "../plates/plate-sketch-arrangement.js";
 import { DEFAULT_PLATE_REFERENCES } from "../plates/default-plate-profile.js";
+import {
+  arrangeFulldomeBundle,
+  isFulldomeBundleSize,
+  type FulldomeBundleArrangementOptions,
+  type FulldomeBundleOrientation,
+  type FulldomeBundleSlot,
+} from "../plates/fulldome-bundle-arrangement.js";
 import type { PlateSketchPreviewInput, PlateSketchPreviewSession } from "../plates/plate-sketch-preview-session.js";
 import { loadPlateSketchSource, type PlateSketchImage } from "../plates/plate-sketch-sources.js";
 import { normalizePlatePlacement } from "../plates/plate-placement.js";
@@ -39,7 +46,7 @@ import { MediaRepository } from "./media-repository.js";
 import { WorkbenchService } from "./workbench-service.js";
 
 export class BrowserWorkbenchError extends Data.TaggedError("BrowserWorkbenchError")<{
-  readonly operation: "load" | "import" | "commit" | "take" | "state";
+  readonly operation: "load" | "import" | "arrange" | "export" | "commit" | "take" | "state";
   readonly message: string;
   readonly cause?: unknown;
 }> {}
@@ -47,6 +54,23 @@ export class BrowserWorkbenchError extends Data.TaggedError("BrowserWorkbenchErr
 export type LoadedCompositionPlate = PlateSketchImage & {
   readonly assetId: string;
   readonly layerId: string;
+};
+
+export type FulldomePlateBundleResult = {
+  readonly zenithLayerId: string;
+  readonly orientation: FulldomeBundleOrientation;
+  readonly slots: ReadonlyArray<{ readonly layerId: string; readonly slot: FulldomeBundleSlot }>;
+};
+
+export type ExactPlateDraftPng = {
+  readonly blob: Blob;
+  readonly filename: string;
+  readonly width: number;
+  readonly height: number;
+};
+
+export type PreparedFulldomePlateBundlePng = ExactPlateDraftPng & {
+  readonly bundle: FulldomePlateBundleResult;
 };
 
 export const loadSelectedCompositionPlates = Effect.gen(function* () {
@@ -104,7 +128,13 @@ export const loadSelectedCompositionPlates = Effect.gen(function* () {
   );
 });
 
-export function importPlateSources(files: ReadonlyArray<File>) {
+export function importPlateSources(
+  files: ReadonlyArray<File>,
+  {
+    replace = false,
+    fulldomeLayout,
+  }: { readonly replace?: boolean; readonly fulldomeLayout?: FulldomeBundleArrangementOptions } = {},
+) {
   return Effect.gen(function* () {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length === 0) {
@@ -116,8 +146,10 @@ export function importPlateSources(files: ReadonlyArray<File>) {
     const repository = yield* MediaRepository;
     const ids = yield* IdGenerator;
     const now = new Date(yield* Clock.currentTimeMillis).toISOString();
-    const current = selectedComposition(workbench.getSnapshot().document);
-    const startIndex = current.plateDraft.frame.plateLayers.length;
+    const currentDocument = workbench.getSnapshot().document;
+    const current = selectedComposition(currentDocument);
+    const previousSourceAssetIds = replace ? [...current.sourceAssetIds] : [];
+    const startIndex = replace ? 0 : current.plateDraft.frame.plateLayers.length;
     const total = startIndex + imageFiles.length;
     const imported = yield* Effect.forEach(
       imageFiles,
@@ -171,15 +203,107 @@ export function importPlateSources(files: ReadonlyArray<File>) {
       { concurrency: 2 },
     );
 
-    yield* workbench.updateDocument((document) =>
-      addSourceAssets(
+    const fulldomeArrangement = fulldomeLayout
+      ? yield* Effect.try({
+          try: () =>
+            arrangeFulldomeBundle(
+              imported.map(({ layer }) => ({ aspect: layer.source.aspect })),
+              fulldomeLayout,
+            ),
+          catch: (cause) =>
+            new BrowserWorkbenchError({
+              operation: "arrange",
+              message: cause instanceof Error ? cause.message : "The fulldome bundle could not be arranged.",
+              cause,
+            }),
+        })
+      : null;
+    if (fulldomeArrangement) {
+      imported.forEach(({ layer }, index) => {
+        layer.placement = structuredClone(fulldomeArrangement.placements[index]!);
+      });
+    }
+
+    const document = yield* workbench.updateDocument((document) => {
+      const next = addSourceAssets(
         document,
         imported.map(({ asset }) => asset),
         imported.map(({ layer }) => layer),
         now,
-      ),
-    );
+        { replace },
+      );
+      if (fulldomeArrangement) {
+        const zenithLayerId = imported[fulldomeArrangement.activeIndex]!.layer.id;
+        selectedComposition(next).plateDraft.frame.activeLayerId = zenithLayerId;
+        next.workspace.selectedLayerId = zenithLayerId;
+      }
+      return next;
+    });
+    if (replace) {
+      yield* Effect.forEach(
+        previousSourceAssetIds.filter((assetId) => !document.project.assets[assetId]),
+        (assetId) => repository.remove(assetId),
+      );
+    }
     return imported.map(({ asset }) => asset);
+  });
+}
+
+/** Replaces the editable sources with one curated pair/trio and applies its layout in the same state transition. */
+export function prepareFulldomePlateBundle(
+  files: ReadonlyArray<File>,
+  {
+    zenithSourceIndex = files.length - 1,
+    orientation = "profile",
+  }: { readonly zenithSourceIndex?: number; readonly orientation?: FulldomeBundleOrientation } = {},
+) {
+  return Effect.gen(function* () {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (!isFulldomeBundleSize(imageFiles.length) || imageFiles.length !== files.length) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({
+          operation: "import",
+          message: "Choose exactly 2 or 3 image files for a fulldome bundle.",
+        }),
+      );
+    }
+    if (!Number.isInteger(zenithSourceIndex) || zenithSourceIndex < 0 || zenithSourceIndex >= imageFiles.length) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({
+          operation: "arrange",
+          message: `Zenith source index ${zenithSourceIndex} is outside this ${imageFiles.length}-source bundle.`,
+        }),
+      );
+    }
+    const imported = yield* importPlateSources(imageFiles, {
+      replace: true,
+      fulldomeLayout: { zenithIndex: zenithSourceIndex, orientation },
+    });
+    const workbench = yield* WorkbenchService;
+    const current = selectedComposition(workbench.getSnapshot().document);
+    const zenithAssetId = imported[zenithSourceIndex]!.id;
+    const zenithLayer = current.plateDraft.frame.plateLayers.find((layer) => layer.source.assetId === zenithAssetId);
+    if (!zenithLayer) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({
+          operation: "state",
+          message: "The imported zenith source is missing from the selected composition.",
+        }),
+      );
+    }
+    const zenithLayerIndex = current.plateDraft.frame.plateLayers.findIndex((layer) => layer.id === zenithLayer.id);
+    const arrangement = arrangeFulldomeBundle(
+      current.plateDraft.frame.plateLayers.map((layer) => ({ aspect: layer.source.aspect })),
+      { zenithIndex: zenithLayerIndex, orientation },
+    );
+    return {
+      zenithLayerId: zenithLayer.id,
+      orientation: arrangement.orientation,
+      slots: current.plateDraft.frame.plateLayers.map((layer, index) => ({
+        layerId: layer.id,
+        slot: arrangement.slots[index]!,
+      })),
+    } satisfies FulldomePlateBundleResult;
   });
 }
 
@@ -263,6 +387,193 @@ export function replacePlateDraft(draft: PlateDraft) {
     const workbench = yield* WorkbenchService;
     const now = new Date(yield* Clock.currentTimeMillis).toISOString();
     return yield* workbench.updateDocument((document) => replaceSelectedCompositionDraft(document, draft, now));
+  });
+}
+
+/** Applies the curated pair/trio fulldome profile to the selected composition. */
+export function arrangeFulldomePlateBundle({
+  zenithLayerId,
+  orientation = "profile",
+}: {
+  readonly zenithLayerId: string;
+  readonly orientation?: FulldomeBundleOrientation;
+}) {
+  return Effect.gen(function* () {
+    const workbench = yield* WorkbenchService;
+    const current = selectedComposition(workbench.getSnapshot().document);
+    const visibleLayers = current.plateDraft.frame.plateLayers.filter((layer) => layer.visible);
+    if (!isFulldomeBundleSize(visibleLayers.length)) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({
+          operation: "arrange",
+          message: `A fulldome bundle requires exactly 2 or 3 visible sources; found ${visibleLayers.length}.`,
+        }),
+      );
+    }
+    const zenithIndex = visibleLayers.findIndex((layer) => layer.id === zenithLayerId);
+    if (zenithIndex < 0) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({
+          operation: "arrange",
+          message: "Choose one visible source for the zenith slot.",
+        }),
+      );
+    }
+    const arrangement = arrangeFulldomeBundle(
+      visibleLayers.map((layer) => ({ aspect: layer.source.aspect })),
+      { zenithIndex, orientation },
+    );
+    const draft = structuredClone(current.plateDraft);
+    visibleLayers.forEach((layer, index) => {
+      const target = draft.frame.plateLayers.find((candidate) => candidate.id === layer.id);
+      if (target) target.placement = structuredClone(arrangement.placements[index]!);
+    });
+    draft.frame.activeLayerId = zenithLayerId;
+    const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+    yield* workbench.updateDocument((document) => replaceSelectedCompositionDraft(document, draft, now));
+    return {
+      zenithLayerId,
+      orientation: arrangement.orientation,
+      slots: visibleLayers.map((layer, index) => ({ layerId: layer.id, slot: arrangement.slots[index]! })),
+    } satisfies FulldomePlateBundleResult;
+  });
+}
+
+/** Renders the current Plate Draft into the same exact, metadata-bearing PNG used by the UI. */
+export function renderExactPlateDraftPng(
+  session: Pick<PlateSketchPreviewSession, "renderHandoffCanvas">,
+  previewInput: PlateSketchPreviewInput,
+) {
+  return Effect.gen(function* () {
+    const workbench = yield* WorkbenchService;
+    const snapshot = workbench.getSnapshot();
+    const composition = selectedComposition(snapshot.document);
+    if (composition.sourceAssetIds.length === 0 || previewInput.plates.length === 0) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({ operation: "export", message: "Load at least one source before exporting." }),
+      );
+    }
+    const draft = structuredClone(composition.plateDraft);
+    const { width, height } = draft.raster;
+    const handoff = yield* Effect.tryPromise({
+      try: () => session.renderHandoffCanvas(previewInput, { width, height }),
+      catch: (cause) =>
+        new BrowserWorkbenchError({
+          operation: "export",
+          message: "The exact Plate Sketch raster could not be rendered.",
+          cause,
+        }),
+    });
+    if (handoff.width !== width || handoff.height !== height) {
+      return yield* Effect.fail(
+        new BrowserWorkbenchError({
+          operation: "export",
+          message: `Renderer returned ${handoff.width}×${handoff.height}; expected ${width}×${height}.`,
+        }),
+      );
+    }
+    const encodedBlob = yield* Effect.tryPromise({
+      try: () => canvasToBlob(handoff, "image/png"),
+      catch: (cause) =>
+        new BrowserWorkbenchError({ operation: "export", message: "Plate Sketch PNG encoding failed.", cause }),
+    });
+    const spatialSpec = {
+      ...defaultImageSpatialSpec(draft),
+      sourceWidth: width,
+      sourceHeight: height,
+      sourceAspectRatio: width / height,
+    };
+    const createdAt = new Date(yield* Clock.currentTimeMillis).toISOString();
+    const blob = yield* Effect.tryPromise({
+      try: () =>
+        embedZenithPlateMetadataInPngBlob(encodedBlob, {
+          version: 1,
+          kind: "plate-draft",
+          projectId: snapshot.document.project.id,
+          compositionId: composition.id,
+          plateCommitId: null,
+          createdAt,
+          draft,
+          spatialSpec,
+          provenance: null,
+        }),
+      catch: (cause) =>
+        new BrowserWorkbenchError({
+          operation: "export",
+          message: "Plate Sketch spatial metadata could not be embedded.",
+          cause,
+        }),
+    });
+    return {
+      blob,
+      filename: `zenith-plate-sketch-${width}x${height}.png`,
+      width,
+      height,
+    } satisfies ExactPlateDraftPng;
+  });
+}
+
+/**
+ * Builds the clean source-map input used by exact automation renders.
+ *
+ * Preview-only camera, guide, and cave-mask state are fixed to inert values:
+ * `renderHandoffCanvas` intentionally consumes only the authored Plate Draft.
+ */
+export function exactPlateDraftPreviewInput(
+  draft: PlateDraft,
+  plates: ReadonlyArray<LoadedCompositionPlate>,
+): PlateSketchPreviewInput {
+  const visibleLayers = draft.frame.plateLayers.filter((layer) => layer.visible);
+  if (visibleLayers.length !== plates.length) {
+    throw new RangeError(
+      `Exact Plate Draft render requires one decoded source per visible layer; found ${plates.length} sources for ${visibleLayers.length} layers.`,
+    );
+  }
+  return {
+    plates: [...plates],
+    placements: visibleLayers.map((layer) => normalizePlatePlacement(layer.placement)),
+    canvasWidth: draft.raster.width,
+    canvasHeight: draft.raster.height,
+    plateFit: draft.frame.plateFit,
+    plateFeather: draft.frame.plateFeather,
+    domeGuideSemanticSplit: draft.guideSplit,
+    domeGuideHorizonSplit: draft.horizonSplit,
+    sourceProjectionMode: draft.projectionMode,
+    projectionSurface: draft.surface,
+    viewerMode: "domemaster",
+    projectionViewMode: "source-map",
+    projectionCamera: {},
+    showCaveMask: false,
+    invertCaveMask: false,
+  };
+}
+
+/**
+ * Complete browser-runtime operation for automation: curated Files in, exact
+ * metadata-bearing Plate Draft PNG out. It does not depend on React render
+ * timing or initiate a browser download.
+ */
+export function prepareAndRenderFulldomePlateBundlePng(
+  session: Pick<PlateSketchPreviewSession, "renderHandoffCanvas">,
+  files: ReadonlyArray<File>,
+  options: { readonly zenithSourceIndex?: number; readonly orientation?: FulldomeBundleOrientation } = {},
+) {
+  return Effect.gen(function* () {
+    const bundle = yield* prepareFulldomePlateBundle(files, options);
+    const plates = yield* loadSelectedCompositionPlates;
+    const workbench = yield* WorkbenchService;
+    const draft = structuredClone(selectedComposition(workbench.getSnapshot().document).plateDraft);
+    const previewInput = yield* Effect.try({
+      try: () => exactPlateDraftPreviewInput(draft, plates),
+      catch: (cause) =>
+        new BrowserWorkbenchError({
+          operation: "export",
+          message: cause instanceof Error ? cause.message : "The exact Plate Draft input could not be assembled.",
+          cause,
+        }),
+    });
+    const png = yield* renderExactPlateDraftPng(session, previewInput);
+    return { ...png, bundle } satisfies PreparedFulldomePlateBundlePng;
   });
 }
 

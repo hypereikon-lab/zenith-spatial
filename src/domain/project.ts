@@ -445,6 +445,7 @@ export function addSourceAssets(
       layers.at(-1)?.id ?? composition.plateDraft.frame.plateLayers[0]?.id ?? null;
     next.workspace.selectedLayerId = composition.plateDraft.frame.activeLayerId;
     composition.updatedAt = now;
+    if (replace) removeUnreferencedAssets(next.project);
   });
 }
 

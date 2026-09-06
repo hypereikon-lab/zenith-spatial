@@ -11,6 +11,8 @@
     "build": "vite build",
     "build:site": "vite build --mode site && node scripts/prepare-site-build.mjs",
     "chatgpt-image": "node scripts/chatgpt-image-bridge.mjs",
+    "fulldome:api": "node scripts/fulldome-compose-api.mjs",
+    "fulldome:compose": "node scripts/fulldome-compose.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "preview:site": "vite preview --mode site --host 127.0.0.1",
     "start": "tsx --env-file-if-exists=.env.local server/main.ts",

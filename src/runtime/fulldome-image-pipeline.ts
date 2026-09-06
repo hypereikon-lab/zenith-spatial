@@ -24,3 +24,13 @@ export {
   type FulldomePlateBundleResult,
   type PreparedFulldomePlateBundlePng,
 } from "./browser-workbench-commands.js";
+
+export {
+  composeFulldomePlateBundlePng,
+  FulldomeComposeError,
+  type FulldomeComposeManifest,
+  type FulldomeComposeOptions,
+  type FulldomeComposeResult,
+  type FulldomeComposeSource,
+  type FulldomeDirectReference,
+} from "./fulldome-compose-kernel.js";

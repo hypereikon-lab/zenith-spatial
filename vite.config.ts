@@ -1,6 +1,7 @@
 import react from "@vitejs/plugin-react";
 import typegpuPlugin from "unplugin-typegpu/vite";
 import { defineConfig, type PluginOption } from "vite";
+import { resolve } from "node:path";
 
 import hostingConfig from "./.openai/hosting.json" with { type: "json" };
 
@@ -45,6 +46,14 @@ export default defineConfig(async ({ mode }) => {
     build: {
       outDir: siteMode ? "dist" : "dist/client",
       emptyOutDir: true,
+      rollupOptions: siteMode
+        ? undefined
+        : {
+            input: {
+              main: resolve(import.meta.dirname, "index.html"),
+              "fulldome-compose": resolve(import.meta.dirname, "fulldome-compose.html"),
+            },
+          },
     },
     server: siteMode
       ? { host: "127.0.0.1" }

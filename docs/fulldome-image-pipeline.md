@@ -6,7 +6,7 @@ Zenith owns one narrow, deterministic stage between curated references and an ex
 curated pair or trio
   -> assign one source to the zenith slot
   -> arrange the remaining field sources
-  -> inspect or edit in Compose
+  -> optionally inspect or edit in Compose
   -> render the exact metadata-bearing PNG
   -> send that PNG to GPT Image 2
 ```
@@ -28,21 +28,76 @@ that belongs in the zenith slot. Zenith supplies projection-aware placement only
 The existing exact export remains authoritative. It renders at the selected carrier raster and embeds the complete
 `zenith.plate.v1` draft and spatial contract without re-encoding the composed pixels afterward.
 
-## Automation boundary
+## Headless composition
+
+The full Zenith interface is optional. The workbench-free kernel accepts two or three ordinary image files and
+returns the exact 1920×1920 PNG plus an explicit manifest. It does not construct React, read selected UI state, open
+the Workbench, or traverse a media repository.
+
+Copy `docs/fulldome-compose-job.example.json` to a private location, replace its paths, and run:
+
+```sh
+npm run fulldome:compose -- --job /absolute/path/fulldome-compose-job.json
+```
+
+The command writes the requested PNG and a sibling `<output>.manifest.json`. `--dry-run` validates paths, bundle
+size, zenith assignment, and orientation without starting the renderer:
+
+```sh
+npm run fulldome:compose -- --job /absolute/path/fulldome-compose-job.json --dry-run
+```
+
+For repeated composition, keep the local API warm:
+
+```sh
+npm run fulldome:api
+curl --fail-with-body \
+  --header 'content-type: application/json' \
+  --data-binary @/absolute/path/fulldome-compose-job.json \
+  http://127.0.0.1:4181/api/fulldome/compose
+```
+
+`POST /api/fulldome/compose` returns `{ schema, pngBase64, manifest }`; `GET /api/fulldome/health` reports whether
+the renderer is cold or warm. The API deliberately binds only to `127.0.0.1`: its inputs are local file paths and it
+is an internal pipeline boundary, not a public upload service.
+
+The implementation has three layers:
+
+- `composeFulldomePlateBundlePng(...)` is the UI- and service-independent TypeScript kernel.
+- `fulldome-compose.html` is a minimal internal WebGPU harness with no React or Workbench UI.
+- `scripts/fulldome-compose-api.mjs` serializes requests through one reusable headless renderer; the CLI is a small
+  client of that same API.
+
+Zenith's existing WebGPU compositor remains the single rendering implementation. Headless operation reuses it
+instead of porting projection math to a second renderer.
+
+## Provenance contract
+
+Each source may declare `directReferences`: only the files used immediately to create that source. These references
+are hashed and deduplicated by SHA-256. Zenith records exactly that one edge; it does not recursively import the
+references' own ancestry. Consequently, three sources with five immediate references each correctly yield fifteen
+manifest entries—never an inferred second provenance level.
+
+Local paths are retained only in the external JSON manifest. They are not embedded into the exported PNG. The PNG
+continues to embed the normal `zenith.plate.v1` spatial metadata required for exact reopening and projection-aware
+handoff.
+
+## In-process automation boundary
 
 Import the narrow facade at `src/runtime/fulldome-image-pipeline.ts` rather than reproducing layout or export logic:
 
 - `arrangeFulldomeBundle(...)` is the pure geometry operation.
+- `composeFulldomePlateBundlePng(...)` is the preferred standalone operation and does not require a service layer.
 - `prepareFulldomePlateBundle(...)` atomically replaces the editable sources and arranges a selected pair or trio.
 - `arrangeFulldomePlateBundle(...)` applies it to the selected Workbench composition.
 - `renderExactPlateDraftPng(...)` returns the exact PNG as a `Blob` instead of initiating a browser download.
 - `prepareAndRenderFulldomePlateBundlePng(...)` performs import, layout, source decoding, and exact export as one
   Effect operation. It does not wait for React state and is the preferred automation entry point.
 
-The renderer remains browser/WebGPU-owned. The caller supplies the existing preview session and receives the PNG
-`Blob`; it can then download those bytes or pass them to the next authorized stage. The operation accepts ordinary
-browser `File` values, so a Drive adapter only needs to materialize each selected binary with its original filename
-and MIME type. Drive credentials and folder traversal remain outside Zenith.
+The renderer remains browser/WebGPU-owned. An in-process caller supplies a preview session and receives the PNG
+`Blob`; the local API manages that session automatically. Both paths accept ordinary browser `File` values, so a
+Drive adapter only needs to materialize each selected binary with its original filename and MIME type. Drive
+credentials and folder traversal remain outside Zenith.
 
 ## ChatGPT Images bridge
 

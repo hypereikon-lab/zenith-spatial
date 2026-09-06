@@ -1,0 +1,22 @@
+{
+  "sources": [
+    {
+      "path": "/absolute/path/field-a.png",
+      "directReferences": [
+        "/absolute/path/reference-used-directly-for-a-01.jpg",
+        "/absolute/path/reference-used-directly-for-a-02.jpg"
+      ]
+    },
+    {
+      "path": "/absolute/path/field-b.png",
+      "directReferences": ["/absolute/path/reference-used-directly-for-b-01.jpg"]
+    },
+    {
+      "path": "/absolute/path/zenith-c.png",
+      "directReferences": []
+    }
+  ],
+  "zenithSourceIndex": 2,
+  "orientation": "profile",
+  "output": "/absolute/path/plate-sketch.png"
+}

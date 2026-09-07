@@ -19,6 +19,7 @@ describe("workbench-free fulldome compose kernel", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   test("renders an arranged trio with direct-only deduplicated provenance and no service layer", async () => {
+    const drawImage = vi.fn();
     vi.stubGlobal(
       "createImageBitmap",
       vi.fn(async () => ({ width: 1200, height: 800, close: vi.fn() }) as unknown as ImageBitmap),
@@ -27,7 +28,7 @@ describe("workbench-free fulldome compose kernel", () => {
       createElement: vi.fn(() => ({
         width: 0,
         height: 0,
-        getContext: vi.fn(() => ({ drawImage: vi.fn() })),
+        getContext: vi.fn(() => ({ drawImage })),
       })),
     });
 
@@ -75,6 +76,7 @@ describe("workbench-free fulldome compose kernel", () => {
           projectId: "project-kernel",
           compositionId: "composition-kernel",
           createdAt: "2026-09-06T12:00:00.000Z",
+          sourceCrop: "center-square",
         },
       ),
     );
@@ -91,6 +93,14 @@ describe("workbench-free fulldome compose kernel", () => {
     expect(result.manifest.sources[2]!.placement).toMatchObject({ azimuth: 0, scale: 2.08, spin: 0 });
     expect(result.manifest.sources[0]!.directReferences).toEqual([{ filename: "direct.jpg", sha256: "same" }]);
     expect(result.manifest.sources[0]!.source).toBe("/local/field-a.png");
+    expect(result.manifest.sources[0]!.normalization).toEqual({
+      mode: "center-square",
+      sourceRaster: { width: 1200, height: 800 },
+      crop: { x: 200, y: 0, width: 800, height: 800 },
+      normalizedRaster: { width: 800, height: 800 },
+    });
+    expect(renderedInput!.plates.every((plate) => plate.aspect === 1)).toBe(true);
+    expect(drawImage).toHaveBeenCalledWith(expect.anything(), 200, 0, 800, 800, 0, 0, 800, 800);
     expect(result.manifest.sources[0]!.generationReceipt).toEqual({
       filename: "runway-generation.json",
       mime: "application/json",

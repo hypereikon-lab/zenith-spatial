@@ -50,6 +50,11 @@ and spin `0.8719`; plus a substantial front source at azimuth `157.3278`, radius
 `-22.238`. Three-source bundles retain their independent front-left/front-right slots rather than extrapolating the
 two-source composition:
 
+Set `"sourceCrop": "center-square"` to crop every source around its image center before it enters the spherical
+placement. The crop is performed in source pixels without stretching, and the manifest records the original raster,
+exact crop rectangle, and normalized compositor raster. This is the campaign default when landscape Runway outputs
+must behave as square Zenith plates. Use `"none"` only when the complete source frame is intentionally required.
+
 ```sh
 npm run fulldome:compose -- --job /absolute/path/fulldome-compose-job.json --dry-run
 ```

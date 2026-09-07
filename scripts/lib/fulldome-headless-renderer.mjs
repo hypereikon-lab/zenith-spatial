@@ -52,12 +52,17 @@ export function normalizeFulldomeComposeJob(raw) {
   if (orientation !== "profile" && orientation !== "mirrored") {
     throw new RangeError('orientation must be "profile" or "mirrored".');
   }
+  const sourceCrop = raw.sourceCrop ?? "none";
+  if (sourceCrop !== "none" && sourceCrop !== "center-square") {
+    throw new RangeError('sourceCrop must be "none" or "center-square".');
+  }
 
   return {
     schema: "zenith.fulldome-compose.request.v2",
     sources,
     dominantSourceIndex,
     orientation,
+    sourceCrop,
     projectId: nonEmptyString(raw.projectId) || "project-headless",
     compositionId: nonEmptyString(raw.compositionId) || `composition-${randomUUID()}`,
     createdAt: nonEmptyString(raw.createdAt) || new Date().toISOString(),
@@ -117,6 +122,7 @@ export class FulldomeHeadlessRenderer {
     const options = {
       dominantSourceIndex: job.dominantSourceIndex,
       orientation: job.orientation,
+      sourceCrop: job.sourceCrop,
       projectId: job.projectId,
       compositionId: job.compositionId,
       createdAt: job.createdAt,

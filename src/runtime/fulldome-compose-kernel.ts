@@ -12,7 +12,11 @@ import {
   type FulldomeBundleSlot,
 } from "../plates/fulldome-bundle-arrangement.js";
 import type { PlateSketchPreviewInput, PlateSketchPreviewSession } from "../plates/plate-sketch-preview-session.js";
-import { loadPlateSketchSource, type PlateSketchImage } from "../plates/plate-sketch-sources.js";
+import {
+  loadPlateSketchSource,
+  type PlateSketchImage,
+  type PlateSketchSourceCropMode,
+} from "../plates/plate-sketch-sources.js";
 import type { NormalizedPlatePlacement } from "../plates/plate-placement.js";
 
 export type FulldomeDirectReference = {
@@ -38,6 +42,8 @@ export type FulldomeComposeOptions = {
   /** @deprecated Compatibility alias for pre-v2 callers. Use dominantSourceIndex. */
   readonly zenithSourceIndex?: number;
   readonly orientation?: FulldomeBundleOrientation;
+  /** Optional source-space normalization performed before any spherical placement. */
+  readonly sourceCrop?: PlateSketchSourceCropMode;
   readonly projectId?: string;
   readonly compositionId?: string;
   readonly createdAt?: string;
@@ -60,6 +66,12 @@ export type FulldomeComposeManifest = {
     readonly width: number;
     readonly height: number;
     readonly sha256: string;
+    readonly normalization: {
+      readonly mode: PlateSketchSourceCropMode;
+      readonly sourceRaster: { readonly width: number; readonly height: number };
+      readonly crop: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+      readonly normalizedRaster: { readonly width: number; readonly height: number };
+    };
     /** Local-only locator retained in the external manifest, never embedded into the PNG. */
     readonly source?: string;
     readonly placement: NormalizedPlatePlacement;
@@ -105,6 +117,7 @@ export function composeFulldomePlateBundlePng(
   return Effect.gen(function* () {
     const dominantSourceIndex = options.dominantSourceIndex ?? options.zenithSourceIndex ?? 0;
     const orientation = options.orientation ?? "profile";
+    const sourceCrop = options.sourceCrop ?? "none";
     const projectId = options.projectId ?? "project-headless";
     const compositionId = options.compositionId ?? "composition-headless";
     const createdAt = options.createdAt ?? new Date().toISOString();
@@ -147,7 +160,7 @@ export function composeFulldomePlateBundlePng(
       files,
       (file) =>
         Effect.tryPromise({
-          try: () => loadPlateSketchSource(file.name, file),
+          try: () => loadPlateSketchSource(file.name, file, { crop: sourceCrop }),
           catch: (cause) =>
             new FulldomeComposeError({
               operation: "decode",
@@ -244,6 +257,20 @@ export function composeFulldomePlateBundlePng(
         width: plates[index]!.width,
         height: plates[index]!.height,
         sha256: sourceHashes[index]!,
+        normalization: {
+          mode: plates[index]!.sourceCrop?.mode ?? "none",
+          sourceRaster: {
+            width: plates[index]!.sourceWidth ?? plates[index]!.width,
+            height: plates[index]!.sourceHeight ?? plates[index]!.height,
+          },
+          crop: {
+            x: plates[index]!.sourceCrop?.x ?? 0,
+            y: plates[index]!.sourceCrop?.y ?? 0,
+            width: plates[index]!.sourceCrop?.width ?? plates[index]!.width,
+            height: plates[index]!.sourceCrop?.height ?? plates[index]!.height,
+          },
+          normalizedRaster: { width: plates[index]!.width, height: plates[index]!.height },
+        },
         ...(sources[index]!.source ? { source: sources[index]!.source } : {}),
         placement: structuredClone(arrangement.placements[index]!),
         directReferences: deduplicateDirectReferences(sources[index]!.directReferences ?? []),

@@ -82,6 +82,31 @@ describe("fulldome compose job provenance", () => {
     expect(second.sources[0].generationReceipt).toEqual({ path: receipt });
     expect(second.sources[0].directReferences).toEqual([{ path: reference }]);
   });
+
+  test("accepts explicit center-square source normalization and preserves it across boundaries", () => {
+    const root = mkdtempSync(join(tmpdir(), "zenith-compose-square-crop-"));
+    const sourceA = write(root, "source-a.png", "A");
+    const sourceB = write(root, "source-b.png", "B");
+
+    const first = normalizeFulldomeComposeJob({
+      sources: [{ path: sourceA }, { path: sourceB }],
+      sourceCrop: "center-square",
+    });
+    const second = normalizeFulldomeComposeJob(first);
+
+    expect(first.sourceCrop).toBe("center-square");
+    expect(second.sourceCrop).toBe("center-square");
+  });
+
+  test("rejects unknown source normalization", () => {
+    const root = mkdtempSync(join(tmpdir(), "zenith-compose-bad-crop-"));
+    const sourceA = write(root, "source-a.png", "A");
+    const sourceB = write(root, "source-b.png", "B");
+
+    expect(() =>
+      normalizeFulldomeComposeJob({ sources: [{ path: sourceA }, { path: sourceB }], sourceCrop: "stretch-square" }),
+    ).toThrow(/sourceCrop/);
+  });
 });
 
 function write(root, filename, contents) {

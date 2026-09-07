@@ -17,6 +17,7 @@ if (args.dryRun) {
         sources: job.sources,
         dominantSourceIndex: job.dominantSourceIndex,
         orientation: job.orientation,
+        sourceCrop: job.sourceCrop,
         output,
       },
       null,

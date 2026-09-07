@@ -6,8 +6,22 @@ export type PlateSketchImage = PlateRenderOptions["plates"][number] & {
   name: string;
   aspect: number;
   canvas: HTMLCanvasElement;
+  sourceWidth?: number;
+  sourceHeight?: number;
+  sourceCrop?: PlateSketchSourceCrop;
   sourceUrl?: string;
   mime?: string;
+};
+
+export const PLATE_SKETCH_SOURCE_CROP_MODES = ["none", "center-square"] as const;
+export type PlateSketchSourceCropMode = (typeof PLATE_SKETCH_SOURCE_CROP_MODES)[number];
+
+export type PlateSketchSourceCrop = {
+  readonly mode: PlateSketchSourceCropMode;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
 };
 
 export type PlateSketchReference = {
@@ -36,18 +50,45 @@ export async function loadDefaultPlateSketchSources(
   return loaded;
 }
 
-export async function loadPlateSketchSource(name: string, blob: Blob): Promise<PlateSketchImage> {
+export async function loadPlateSketchSource(
+  name: string,
+  blob: Blob,
+  { crop = "none" }: { crop?: PlateSketchSourceCropMode } = {},
+): Promise<PlateSketchImage> {
   const bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" });
+  const sourceWidth = bitmap.width;
+  const sourceHeight = bitmap.height;
+  const sourceCrop = resolveSourceCrop(sourceWidth, sourceHeight, crop);
   const maxSide = 1600;
-  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const scale = Math.min(1, maxSide / Math.max(sourceCrop.width, sourceCrop.height));
+  const width = Math.max(1, Math.round(sourceCrop.width * scale));
+  const height = Math.max(1, Math.round(sourceCrop.height * scale));
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  canvas.getContext("2d")?.drawImage(bitmap, 0, 0, width, height);
+  canvas
+    .getContext("2d")
+    ?.drawImage(bitmap, sourceCrop.x, sourceCrop.y, sourceCrop.width, sourceCrop.height, 0, 0, width, height);
   bitmap.close();
-  return { name, width, height, aspect: width / height, canvas };
+  return { name, width, height, aspect: width / height, canvas, sourceWidth, sourceHeight, sourceCrop };
+}
+
+function resolveSourceCrop(
+  sourceWidth: number,
+  sourceHeight: number,
+  mode: PlateSketchSourceCropMode,
+): PlateSketchSourceCrop {
+  if (mode === "none") {
+    return { mode, x: 0, y: 0, width: sourceWidth, height: sourceHeight };
+  }
+  const size = Math.min(sourceWidth, sourceHeight);
+  return {
+    mode,
+    x: Math.floor((sourceWidth - size) / 2),
+    y: Math.floor((sourceHeight - size) / 2),
+    width: size,
+    height: size,
+  };
 }
 
 const defaultFetchSource: typeof fetch = (...args) => {

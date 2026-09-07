@@ -11,5 +11,6 @@
   ],
   "dominantSourceIndex": 0,
   "orientation": "profile",
+  "sourceCrop": "center-square",
   "output": "/absolute/path/plate-sketch.png"
 }

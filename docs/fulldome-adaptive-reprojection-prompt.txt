@@ -1,4 +1,4 @@
-Use @Image1 as a normalized spatial-intent and missing-region guide for one clean square equidistant 180-degree fulldome domemaster. Do not treat it as a pixel-registered image edit or an exact bitmap to copy. Image1 determines the projection topology, the zenith axis, the circular horizon rim, the approximate azimuthal neighborhoods, the relative prominence of the source regions, and their zenith-to-horizon relationship. It does not require preserving literal pixels, rectangular proportions, precise scale, or the original planar perspective.
+Use @Image1 as both the authoritative visual payload and the spatial guide for one clean square equidistant 180-degree fulldome domemaster. This is not a loose moodboard and not permission to invent a replacement composition. Preserve the actual depicted content of every visible plate while changing only the coordinate mapping needed for a correct fulldome projection.
 
 FULLDOME GEOMETRY — INVARIANT:
 - Produce one true circular projection disk centered exactly in the square, with identical horizontal and vertical diameter and pure black only outside the disk.
@@ -7,12 +7,15 @@ FULLDOME GEOMETRY — INVARIANT:
 - The outer circumference is the complete 360-degree horizon. The disk must not be cropped, offset, mirrored, squeezed, or stretched differently along the horizontal and vertical axes.
 - A constant-elevation locus would be a centered circle, never a horizontal oval. The colored semantic transition is not a visible ring or scene boundary.
 
-Adaptive reprojection of the plates:
-- Treat every visible plate in Image1 as an anchored region of scene intention, not as a protected bitmap cutout.
-- Preserve the recognizable ecosystem, material identity, principal forms, relative ordering, dominant-versus-secondary relationship, and approximate directional neighborhood.
-- Freely repaint, bend, compress, expand, occlude, resynthesize, and nonlinearly warp the plate content as required to make it native to the spherical fisheye field.
-- A wide rectangular source must be distributed over polar angle and azimuth. Do not preserve its width by turning it into a horizontal band or by ovalizing the zenith field.
-- Reconcile all plate perspectives into one continuous camera, one illumination field, one depth system, and one surrounding environment. No crop silhouette or pasted boundary may survive.
+Content-preserving reprojection of the plates:
+- Attachment roles are strict. Image1 is the Plate Sketch and owns projection topology, visible plate content, and spatial arrangement. Image2 and Image3 are the full-resolution source images used to make the two visible plates; use them to conserve and recover those exact views. Image4 and later images are ancestry or territorial references and may influence only the newly synthesized missing field.
+- Treat every visible plate in Image1 as authoritative image content, not merely a semantic reference. Preserve the same scene instance, supplied viewpoint evidence, principal forms, landmark adjacency, internal topology, material patterns, color relationships, illumination, detail frequency, and local textures.
+- Every identifiable tree, branch, rock, shore, cloud opening, water boundary, or other salient feature visible in a plate must remain recognizable after reprojection. Do not replace it with a different but similar forest, lake, sky, terrain, or imagined view.
+- Reproject the content; do not redesign it. Apply a smooth, continuous, locally coherent coordinate warp so the supplied imagery conforms to the spherical fisheye field. Bending, shearing, rotation, and non-uniform resampling are allowed only as geometric transformations of the existing visual information.
+- Existing plate pixels need not remain at the same output coordinates, and the rectangular aspect ratio is not sacred. Their visual information is sacred. Preserve feature identity and neighborhood relationships under deformation.
+- A wide rectangular plate may curve and redistribute over polar angle and azimuth, but it must still depict the same supplied view. Never turn it into a straight horizontal band, ovalize the zenith field, or invent a replacement panorama.
+- Limit new synthesis to the cyan/green missing regions, continuation beyond plate boundaries, and the narrowest transition band needed to remove pasted edges. Inside each stable plate interior, use only content-preserving reprojection and resampling; do not diffuse away its details.
+- Preserve plate count, azimuthal order, directional neighborhoods, relative prominence, and zenith-to-horizon trajectory. Do not arbitrarily recenter, enlarge, shrink, exchange, delete, or duplicate the plates.
 
 Guide interpretation:
 - Cyan/blue and aqua/green areas inside the projection disk are missing image data plus positional evidence, not objects, lighting, atmosphere, water, sky, walls, or artwork.
@@ -20,14 +23,16 @@ Guide interpretation:
 - Black rings, spokes, registration marks, source-circle marks, and plate boundaries are temporary construction guides. Remove them completely.
 - Complete every missing region by continuing the same visual world and medium through the corresponding fulldome direction.
 
-Use the other attached images only as material, textural, atmospheric, luminous, ecological, and territorial evidence for that same continuous place. They may clarify content and realism, but they do not determine 2D placement and are not separate subjects to reproduce. Do not create a collage, montage, split view, tiled composition, portal, frame within a frame, visible transition, text, logo, watermark, road, vehicle, boat, building, or human-made infrastructure.
+Use each matching source image as a fidelity checksum for the exact content already visible in its plate and as evidence for extending that content into missing regions. It must not introduce a new subject, viewpoint, landmark, or ecosystem. Other territorial references may inform only the newly synthesized missing field; they may not alter or replace plate content. Do not create a collage, montage, split view, tiled composition, portal, frame within a frame, visible transition, text, logo, watermark, road, vehicle, boat, building, or human-made infrastructure.
 
 Before returning the image, verify the geometry independently of resemblance:
 1. the projection support is a true centered circle;
 2. the zenith is a point at the exact center rather than an oval opening;
 3. radial scale is the same at every azimuth;
-4. no source rectangle remains legible as a rectangle or horizontal band;
-5. the vertical compositional intention of Image1 remains recognizable;
-6. no cyan, green, rings, spokes, masks, seams, holes, or repair boundaries remain.
+4. every principal feature and local relationship in each plate remains traceable after geometric deformation;
+5. no plate has been replaced by newly imagined but semantically similar scenery;
+6. no source rectangle remains legible as a rectangle or horizontal band;
+7. the directional composition of Image1 remains recognizable;
+8. no cyan, green, rings, spokes, masks, seams, holes, or repair boundaries remain.
 
 Return only the finished opaque square domemaster at the provider's native square resolution.

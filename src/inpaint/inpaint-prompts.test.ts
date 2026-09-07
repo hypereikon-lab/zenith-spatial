@@ -32,17 +32,21 @@ describe("projection inpaint prompts", () => {
   });
 
   it.each(["zenith-180", "zenith-230"] as const)(
-    "adaptively reprojects authored intent into a rotationally symmetric %s domemaster",
+    "reprojects authored content conservatively into a rotationally symmetric %s domemaster",
     (mode) => {
       const prompt = inpaintPromptForProjection(mode);
-      expect(prompt).toContain("ZENITH ADAPTIVE DOMEMASTER REPROJECTION CONTRACT v1");
-      expect(prompt).toContain("normalized spatial-intent map");
-      expect(prompt).toContain("not as a pixel-registered bitmap to copy");
-      expect(prompt).toContain("REPROJECT, DO NOT PASTE");
+      expect(prompt).toContain("ZENITH CONTENT-PRESERVING DOMEMASTER REPROJECTION CONTRACT v2");
+      expect(prompt).toContain("content-preserving reprojectable image carrier");
+      expect(prompt).toContain("not pixel-registered to the provider's output raster");
+      expect(prompt).toContain("CONTENT FIDELITY IS AN INVARIANT");
+      expect(prompt).toContain("REPROJECT THE CONTENT; DO NOT REDESIGN IT");
+      expect(prompt).toContain("Their visual information is sacred");
+      expect(prompt).toContain("Limit new synthesis to the cyan/green missing regions");
+      expect(prompt).toContain("feature-conservation check");
       expect(prompt).toContain("r/R = theta/");
       expect(prompt).toContain("constant-angle locus is a centered circle and never a horizontal ellipse");
       expect(prompt).toContain("The zenith is one direction at one exact point");
-      expect(prompt).toContain("central field becomes a horizontal oval");
+      expect(prompt).toContain("produces a horizontal oval");
       expect(prompt).not.toContain("output (x,y) is the same carrier address as input (x,y)");
       expect(prompt).not.toContain("PLACEMENT TOLERANCE");
       expect(prompt.length).toBeLessThan(32_000);
@@ -195,12 +199,12 @@ describe("projection inpaint prompts", () => {
       frame: scene.frame0,
     });
 
-    expect(prompt).toContain("SOURCE APPEARANCE REFERENCES — CONTENT AUTHORITY, NEVER POSITION AUTHORITY");
+    expect(prompt).toContain("SOURCE APPEARANCE REFERENCES — FIDELITY CHECKSUM AND EXTENSION EVIDENCE");
     expect(prompt).toContain("Image 2 / @source_1 is the original unwarped appearance reference for Layer 1");
     expect(prompt).toContain("Image 3 / @source_2 is the original unwarped appearance reference for Layer 2");
     expect(prompt).toContain("macro-a.webp, 700×700");
-    expect(prompt).toContain("matching region in @plate_sketch determines its intended directional neighborhood");
-    expect(prompt).toContain("does not lock literal pixels, rectangular proportions, scale, or warp");
+    expect(prompt).toContain("fidelity checksum for the exact content already visible");
+    expect(prompt).toContain("only the geometric mapping may change");
     expect(prompt).toContain("If they are macro, abstract, liquid, translucent");
     expect(prompt).toContain("Never reinterpret ambiguous green, blue, reflective, organic, or glass-like matter");
     expect(prompt).toContain("This label encodes geometry only and supplies no subject matter");
@@ -227,7 +231,7 @@ describe("projection inpaint prompts", () => {
       frame: scene.frame0,
     });
 
-    expect(prompt).toContain("ZENITH ADAPTIVE DOMEMASTER REPROJECTION CONTRACT v1");
+    expect(prompt).toContain("ZENITH CONTENT-PRESERVING DOMEMASTER REPROJECTION CONTRACT v2");
     expect(prompt).toContain("ARTIST DIRECTION — SUBJECT, MATERIAL, ATMOSPHERE, AND CONTINUITY");
     expect(prompt).toContain("Keep the flowers sparse and pale.");
   });

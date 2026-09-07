@@ -40,7 +40,7 @@ const INPAINT_GUIDE_PROMPT = `Treat the continuous cyan-to-green positional fiel
 const NADIR_INPAINT_GUIDE_PROMPT = `This is a bottom-facing nadir fisheye repair guide, not a zenith dome view. The center of the circle is the downward projection direction directly below the viewer. It does not require literal floor, ground, or terrain; continue the source-derived visual medium there. Do not reinterpret it as sky, clouds, sun, ceiling, treetops, or overhead canopy. ${INPAINT_GUIDE_PROMPT}`;
 const HALL_CARRIER_EDIT_MARKER = "ZENITH HALL CARRIER EDIT";
 const INTEGRATED_PLATE_EDIT_MARKER = "ZENITH ANCHORED PLATE INTEGRATION CONTRACT v4";
-const ADAPTIVE_DOMEMASTER_EDIT_MARKER = "ZENITH ADAPTIVE DOMEMASTER REPROJECTION CONTRACT v1";
+const ADAPTIVE_DOMEMASTER_EDIT_MARKER = "ZENITH CONTENT-PRESERVING DOMEMASTER REPROJECTION CONTRACT v2";
 const PIXEL_LOCK_EDIT_MARKER = "ZENITH MASKED SEMANTIC INPAINT CONTRACT v3";
 
 export const PLATE_INTEGRATION_MODES = ["integrated", "strict"] as const;
@@ -74,6 +74,7 @@ const OBSOLETE_GENERATED_INPAINT_PROMPT_MARKERS = [
   "exact square domemaster composition handoff for inpaint",
   "exact square CAVE 270 source-map guide",
   "ZENITH ANCHORED PLATE INTEGRATION CONTRACT v4",
+  "ZENITH ADAPTIVE DOMEMASTER REPROJECTION CONTRACT v1",
   "black square bands and spokes",
   "coherent continuation of the same flat source texture",
   "Do not create visible room corners",
@@ -231,7 +232,7 @@ function zenith180InpaintPrompt(
   plateIntegrationMode: PlateIntegrationMode = DEFAULT_PLATE_INTEGRATION_MODE,
 ): string {
   if (plateIntegrationMode === "integrated") {
-    return `Use @plate_sketch as a normalized spatial-intent map for one equidistant 180 fulldome map, not as a pixel-registered bitmap to copy. ${adaptiveDomemasterGeometryClause(geometry, "zenith-180")} ${plateTreatmentClause(geometry, "zenith-180", plateIntegrationMode, domeGuideSemanticSplit)} ${domeGuidePromptClause("zenith-180", domeGuideSemanticSplit)} ${INPAINT_GUIDE_PROMPT} Complete every missing region as a coherent continuation of the source-derived visual world and medium. No visible cyan/blue guide patches, green patches, mask edges, checkerboards, dividers, radial spokes, central holes, pasted crop boundaries, elliptical apertures, ovalized projection features, or repair boundaries. Output one clean opaque square equidistant 180-degree domemaster.`;
+    return `Use @plate_sketch as a content-preserving reprojectable image carrier and missing-region guide for one equidistant 180 fulldome map. It is not pixel-registered to the provider's output raster, but that never authorizes replacing, redesigning, or semantically regenerating its visible plate imagery. ${adaptiveDomemasterGeometryClause(geometry, "zenith-180")} ${plateTreatmentClause(geometry, "zenith-180", plateIntegrationMode, domeGuideSemanticSplit)} ${domeGuidePromptClause("zenith-180", domeGuideSemanticSplit)} ${INPAINT_GUIDE_PROMPT} Complete every missing region as a coherent continuation of the source-derived visual world and medium. No visible cyan/blue guide patches, green patches, mask edges, checkerboards, dividers, radial spokes, central holes, pasted crop boundaries, elliptical apertures, ovalized projection features, or repair boundaries. Output one clean opaque square equidistant 180-degree domemaster.`;
   }
   return `Use @plate_sketch as the exact projection-source guide. It is an equidistant 180 fulldome map with the zenith at the center and the horizon at the outer circle. ${projectionAuthoringClause(geometry, "zenith-180")} ${plateTreatmentClause(geometry, "zenith-180", plateIntegrationMode, domeGuideSemanticSplit)} Preserve the authored plate subjects, placement, orientation, scale envelope, and fisheye geometry while integrating them into one image. ${domeGuidePromptClause("zenith-180", domeGuideSemanticSplit)} ${INPAINT_GUIDE_PROMPT} Complete missing regions as a coherent continuation of the source-derived visual world and medium. No visible cyan/blue guide patches, green patches, mask edges, checkerboards, dividers, radial spokes, central holes, pasted crop boundaries, or repair boundaries. Output one clean opaque domemaster at the exact raster contract.`;
 }
@@ -243,7 +244,7 @@ function zenith230InpaintPrompt(
   plateIntegrationMode: PlateIntegrationMode = DEFAULT_PLATE_INTEGRATION_MODE,
 ): string {
   if (plateIntegrationMode === "integrated") {
-    return `Use @plate_sketch as a normalized spatial-intent map for one equidistant 230 fulldome map, not as a pixel-registered bitmap to copy. ${adaptiveDomemasterGeometryClause(geometry, "zenith-230")} ${plateTreatmentClause(geometry, "zenith-230", plateIntegrationMode, domeGuideSemanticSplit, domeGuideHorizonSplit)} ${domeGuidePromptClause("zenith-230", domeGuideSemanticSplit, domeGuideHorizonSplit)} ${INPAINT_GUIDE_PROMPT} Complete every missing region as a coherent continuation of the source-derived visual world across the horizon transition. No visible cyan/blue guide patches, green patches, mask edges, checkerboards, dividers, radial spokes, central holes, pasted crop boundaries, elliptical apertures, ovalized projection features, or repair boundaries. Output one clean opaque square equidistant 230-degree domemaster.`;
+    return `Use @plate_sketch as a content-preserving reprojectable image carrier and missing-region guide for one equidistant 230 fulldome map. It is not pixel-registered to the provider's output raster, but that never authorizes replacing, redesigning, or semantically regenerating its visible plate imagery. ${adaptiveDomemasterGeometryClause(geometry, "zenith-230")} ${plateTreatmentClause(geometry, "zenith-230", plateIntegrationMode, domeGuideSemanticSplit, domeGuideHorizonSplit)} ${domeGuidePromptClause("zenith-230", domeGuideSemanticSplit, domeGuideHorizonSplit)} ${INPAINT_GUIDE_PROMPT} Complete every missing region as a coherent continuation of the source-derived visual world across the horizon transition. No visible cyan/blue guide patches, green patches, mask edges, checkerboards, dividers, radial spokes, central holes, pasted crop boundaries, elliptical apertures, ovalized projection features, or repair boundaries. Output one clean opaque square equidistant 230-degree domemaster.`;
   }
   return `Use @plate_sketch as the exact projection-source guide. It is an equidistant 230 fulldome map with the zenith at the center, the physical horizon direction remapped to the editable source-map horizon carrier, and the outer circle extending 25 degrees below the horizon. ${projectionAuthoringClause(geometry, "zenith-230")} ${plateTreatmentClause(geometry, "zenith-230", plateIntegrationMode, domeGuideSemanticSplit, domeGuideHorizonSplit)} Preserve the authored plate subjects, placement, orientation, scale envelope, and fisheye geometry while integrating them into one image. ${domeGuidePromptClause("zenith-230", domeGuideSemanticSplit, domeGuideHorizonSplit)} ${INPAINT_GUIDE_PROMPT} Complete missing regions as a coherent continuation of the source-derived visual world across the horizon transition. No visible cyan/blue guide patches, green patches, mask edges, checkerboards, dividers, radial spokes, central holes, pasted crop boundaries, or repair boundaries. Output one clean opaque zenith 230 domemaster at the exact raster contract.`;
 }
@@ -464,23 +465,26 @@ function adaptiveDomemasterReprojectionClause(
   const sourceReferences = sourceAppearanceReferenceClause(frame, "adaptive");
 
   return `${ADAPTIVE_DOMEMASTER_EDIT_MARKER}
-- Image 1 / @plate_sketch specifies scene membership, approximate azimuthal neighborhoods, vertical intent, relative prominence, and the exact fulldome coordinate topology. It is a spatial storyboard, not an instruction to retain literal source pixels, rectangular proportions, or one-to-one input/output coordinates.
+- Image 1 / @plate_sketch is both the authoritative visual payload and the spatial guide. It is not a loose moodboard and not permission to invent a replacement composition. Preserve the actual depicted content of every visible plate while changing only the coordinate mapping needed for a correct fulldome projection.
 ${sourceReferences}
-- Preserve the recognizable visual world, principal material or subject identities, relative ordering, dominant-versus-secondary relationship, and the authored zenith-to-horizon trajectory. Preserve these as semantic and spatial intentions, not as fixed bitmap geometry.${ledger}
-- REPROJECT, DO NOT PASTE: freely repaint, bend, compress, expand, occlude, resynthesize, and nonlinearly warp the plate content as required to make it native to the spherical fisheye field. A wide rectangular source must be distributed over polar angle and azimuth; never preserve its horizontal width by stretching the finished dome along the X axis.
-- The plate rectangles, crop silhouettes, local aspect ratios, literal pixels, exact scale values, and precise centers are expendable. They may move within their intended directional neighborhoods whenever that is necessary for a physically coherent domemaster. The carrier center, circular rim, azimuthal order, and zenith/horizon meanings are not expendable.
+- CONTENT FIDELITY IS AN INVARIANT: preserve the same photographed or rendered scene instance, viewpoint evidence, principal forms, landmark adjacency, internal topology, material patterns, color relationships, illumination, detail frequency, and local textures present inside each plate. A tree, branch, rock, shore, cloud opening, water boundary, or other identifiable feature visible in a plate must remain recognizable in the result after reprojection. Do not replace it with a different but similar forest, lake, sky, terrain, or imagined view.${ledger}
+- REPROJECT THE CONTENT; DO NOT REDESIGN IT: apply a smooth, continuous, locally coherent geometric warp to the supplied plate imagery so its rays conform to the spherical fisheye field. Bending, shearing, rotation, and non-uniform resampling are allowed only as coordinate transformations of the existing visual information. They do not authorize restaging, beautifying, simplifying, substituting, deleting, duplicating, or semantically regenerating the plate interior.
+- Existing plate pixels are not locked to the same output (x,y), and their rectangular aspect ratio is not sacred. Their visual information is sacred. Preserve feature identity and neighborhood relationships under deformation. A wide rectangular plate may curve and redistribute over polar angle and azimuth, but it must still depict that same supplied view rather than a newly imagined panorama.
+- Limit new synthesis to the cyan/green missing regions, natural continuation beyond the plate boundaries, and the narrowest transition band required to remove a pasted edge. Inside the stable interior of a plate, use only content-preserving reprojection and resampling. Do not diffuse away or reinterpret its details.
+- Preserve plate count, azimuthal order, intended directional neighborhood, relative prominence, dominant-versus-secondary relationship, and the authored zenith-to-horizon trajectory. Precise coordinates may move only as much as the projection correction requires; do not arbitrarily recenter, enlarge, shrink, or exchange the plates.
 - The zenith is one direction at one exact point in the image center—not a circular opening, eye, portal, skylight, hole, or elliptical aperture. The colored semantic transition is a smooth directional allocation, not a visible ring or scene boundary.
-- Build one continuous camera and one continuous surrounding environment. Reconcile perspective, depth, lighting, texture scale, and organic structure globally rather than preserving incompatible plate perspectives.
+- Build one continuous surrounding field by extending the supplied views into the missing regions. Reconcile only what is necessary at their boundaries; do not solve continuity by discarding the original viewpoints and composing a new scene.
 
 ${semanticSegmentationClause(mode, guideSplit, horizonSplit, "integrated")}
 
-ADAPTIVE REPROJECTION PROCEDURE
-1. Decode the guide as normalized polar coordinates and identify only the scene content and spatial roles carried by each plate.
+CONTENT-PRESERVING REPROJECTION PROCEDURE
+1. Decode the guide as normalized polar coordinates. Inventory the actual visible forms and landmark relationships inside every plate before generating anything.
 2. Establish a rotationally symmetric equidistant fisheye field before placing scene detail.
-3. Reproject each plate's visual evidence into that field, allowing whatever local deformation is required by its polar position.
-4. Synthesize through every former crop boundary and through the colored guide field until the result is one continuous environment.
-5. Verify radial geometry independently of photographic resemblance: the center remains the zenith point, the rim remains a true circle, and equal polar angles occupy equal radial distances in every azimuth.
-6. Reject and reconstruct any result whose central field becomes a horizontal oval, whose optical scale differs between horizontal and vertical axes, or whose plate rectangles remain perceptible.
+3. Reproject each plate into that field with the minimum smooth deformation required by its polar position. Transport its image content through the warp; do not use it merely as inspiration for a replacement.
+4. Fill the cyan/green field by extending compatible structure outward from the reprojected plate boundaries. Restrict repainting inside plates to a narrow boundary reconciliation band.
+5. Perform a feature-conservation check: the same salient forms, local arrangements, textures, and viewpoint evidence from every plate remain traceable in the output, although their coordinates and curvature may have changed.
+6. Verify radial geometry independently: the center remains the zenith point, the rim remains a true circle, and equal polar angles occupy equal radial distances at every azimuth.
+7. Reject and reconstruct any result that invents substitute scenery, loses or duplicates a principal plate feature, arbitrarily rearranges the composition, produces a horizontal oval, uses different optical scale on X and Y, or leaves a plate rectangle perceptible.
 
 Return only the finished domemaster. Do not output guides, masks, coordinates, labels, intermediate stages, or a perspective preview.`;
 }
@@ -621,19 +625,19 @@ function sourceAppearanceReferenceClause(
 - No separate original-source references are attached. Derive appearance conservatively from the authored plate pixels in @plate_sketch; do not replace ambiguous imagery with a more conventional subject.`;
   }
 
-  return `SOURCE APPEARANCE REFERENCES — CONTENT AUTHORITY, NEVER POSITION AUTHORITY
+  return `SOURCE APPEARANCE REFERENCES — FIDELITY CHECKSUM AND EXTENSION EVIDENCE
 ${references
     .map(
       (reference) =>
       `- Image ${reference.referenceOrdinal} / @${reference.tag} is the original unwarped appearance reference for Layer ${reference.layerOrdinal} (${reference.sourceName}, ${reference.width}×${reference.height}). Use it to recover that layer's content identity, material, microstructure, translucency, color relationships, lighting character, detail frequency, and visual medium. ${
         treatment === "adaptive"
-          ? "Its matching region in @plate_sketch determines its intended directional neighborhood, relative prominence, and compositional role, but does not lock literal pixels, rectangular proportions, scale, or warp."
+          ? "Use it as a fidelity checksum for the exact content already visible in its matching plate and as evidence for extending that content into missing regions. The matching region in @plate_sketch determines its directional neighborhood, prominence, and role. Neither image authorizes inventing a substitute view; only the geometric mapping may change."
           : "Its matching plate footprint in @plate_sketch alone determines where, how large, and with what warp that content belongs."
       }`,
     )
   .join("\n")}
 - Read all source references together before deciding what kind of visual world they depict. Preserve their shared aesthetic and degree of abstraction. If they are macro, abstract, liquid, translucent, microscopic, textural, or nonrepresentational, the completed carrier must remain so.
-- The source references are not extra plates, alternate compositions, backgrounds, or permission to restage a conventional photograph. Do not copy their original square framing into the output and do not place them anywhere except the authored neighborhoods shown in @plate_sketch.
+- The source references are not extra plates, alternate compositions, backgrounds, or permission to restage a conventional photograph. They must not introduce a new subject, viewpoint, landmark, or ecosystem absent from the matching plate. Use them to recover detail and continue beyond an authored boundary, never to replace the plate.
 - Never reinterpret ambiguous green, blue, reflective, organic, or glass-like matter as a forest, garden, sky, terrain, waterway, architecture, or other named scene unless that subject is unmistakably present across the source references themselves.`;
 }
 

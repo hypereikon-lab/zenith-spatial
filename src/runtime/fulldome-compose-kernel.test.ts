@@ -90,7 +90,8 @@ describe("workbench-free fulldome compose kernel", () => {
       dominantSourceIndex: 2,
     });
     expect(result.manifest.sources.map(({ slot }) => slot)).toEqual(["front-left", "front-right", "upper-dominant"]);
-    expect(result.manifest.sources[2]!.placement).toMatchObject({ azimuth: 0, scale: 2.08, spin: 0 });
+    expect(result.manifest.sources[2]!.placement).toMatchObject({ azimuth: 0, spin: 0 });
+    expect(result.manifest.sources[2]!.placement.scale).toBeCloseTo(2.08 * (800 / 1200));
     expect(result.manifest.sources[0]!.directReferences).toEqual([{ filename: "direct.jpg", sha256: "same" }]);
     expect(result.manifest.sources[0]!.source).toBe("/local/field-a.png");
     expect(result.manifest.sources[0]!.normalization).toEqual({
@@ -98,6 +99,7 @@ describe("workbench-free fulldome compose kernel", () => {
       sourceRaster: { width: 1200, height: 800 },
       crop: { x: 200, y: 0, width: 800, height: 800 },
       normalizedRaster: { width: 800, height: 800 },
+      placementScaleFactor: 800 / 1200,
     });
     expect(renderedInput!.plates.every((plate) => plate.aspect === 1)).toBe(true);
     expect(drawImage).toHaveBeenCalledWith(expect.anything(), 200, 0, 800, 800, 0, 0, 800, 800);

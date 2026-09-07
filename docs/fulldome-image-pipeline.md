@@ -52,8 +52,11 @@ two-source composition:
 
 Set `"sourceCrop": "center-square"` to crop every source around its image center before it enters the spherical
 placement. The crop is performed in source pixels without stretching, and the manifest records the original raster,
-exact crop rectangle, and normalized compositor raster. This is the campaign default when landscape Runway outputs
-must behave as square Zenith plates. Use `"none"` only when the complete source frame is intentionally required.
+exact crop rectangle, normalized compositor raster, and placement-scale factor. The cropped plate retains the
+source's pixel-to-angular scale: cropping a 16:9 source to its central square therefore makes its angular footprint
+narrower instead of enlarging that square to the old full-frame width. This is the campaign default when landscape
+Runway outputs must behave as square Zenith plates. Use `"none"` only when the complete source frame is intentionally
+required.
 
 ```sh
 npm run fulldome:compose -- --job /absolute/path/fulldome-compose-job.json --dry-run

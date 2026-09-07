@@ -71,6 +71,7 @@ export type FulldomeComposeManifest = {
       readonly sourceRaster: { readonly width: number; readonly height: number };
       readonly crop: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
       readonly normalizedRaster: { readonly width: number; readonly height: number };
+      readonly placementScaleFactor: number;
     };
     /** Local-only locator retained in the external manifest, never embedded into the PNG. */
     readonly source?: string;
@@ -171,7 +172,16 @@ export function composeFulldomePlateBundlePng(
       { concurrency: 3 },
     );
     const arrangement = yield* Effect.try({
-      try: () => arrangeFulldomeBundle(plates, { dominantIndex: dominantSourceIndex, orientation }),
+      try: () => {
+        const arranged = arrangeFulldomeBundle(plates, { dominantIndex: dominantSourceIndex, orientation });
+        return {
+          ...arranged,
+          placements: arranged.placements.map((placement, index) => ({
+            ...placement,
+            scale: placement.scale * placementScaleFactorForCrop(plates[index]!),
+          })),
+        };
+      },
       catch: (cause) =>
         new FulldomeComposeError({
           operation: "validate",
@@ -270,6 +280,7 @@ export function composeFulldomePlateBundlePng(
             height: plates[index]!.sourceCrop?.height ?? plates[index]!.height,
           },
           normalizedRaster: { width: plates[index]!.width, height: plates[index]!.height },
+          placementScaleFactor: placementScaleFactorForCrop(plates[index]!),
         },
         ...(sources[index]!.source ? { source: sources[index]!.source } : {}),
         placement: structuredClone(arrangement.placements[index]!),
@@ -281,6 +292,11 @@ export function composeFulldomePlateBundlePng(
 
     return { blob, filename, width, height, draft, previewInput, manifest } satisfies FulldomeComposeResult;
   });
+}
+
+function placementScaleFactorForCrop(plate: PlateSketchImage): number {
+  if (plate.sourceCrop?.mode !== "center-square" || !plate.sourceWidth) return 1;
+  return plate.sourceCrop.width / plate.sourceWidth;
 }
 
 function standaloneDraft(

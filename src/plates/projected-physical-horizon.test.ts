@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { defaultPlateEditorCamera } from "./plate-editor-view.js";
 import { createPlateEditorProjectionAdapter } from "./plate-editor-projection-adapter.js";
-import { buildProjectedSpatialAnchorGuides, projectedSpatialAnchorHandleHit } from "./projected-physical-horizon.js";
+import {
+  buildProjectedSpatialAnchorGuides,
+  buildSourceMapHorizonOverlayGuide,
+  projectedSpatialAnchorHandleHit,
+} from "./projected-physical-horizon.js";
 
 describe("projected spatial anchors", () => {
   const viewport = { x: 0, y: 0, width: 800, height: 600 };
@@ -113,6 +117,40 @@ describe("projected spatial anchors", () => {
     expect(guides.every((guide) => guide.segments.length > 0 && guide.handle)).toBe(true);
     const direction = adapter.physicalDirectionAt(guides[1].handle!);
     expect((Math.asin(direction![1]) * 180) / Math.PI).toBeCloseTo(8, 3);
+  });
+
+  test("maps the read-only Plate Map horizon overlay to the same 45-degree dome latitude", () => {
+    const angular = {
+      kind: "angular" as const,
+      anchors: { semanticElevationDegrees: 45, horizonElevationDegrees: 0 },
+    };
+    const adapter = createPlateEditorProjectionAdapter({
+      mode: "source-map",
+      sourceProjectionMode: "zenith-180",
+      camera: defaultPlateEditorCamera("zenith-180", angular),
+      rect: viewport,
+      domeGuideSemanticSplit: 1 / 3,
+      domeGuideHorizonSplit: 1,
+      projectionSurface: angular,
+    });
+    const guide = buildSourceMapHorizonOverlayGuide({
+      surface: angular,
+      mode: "zenith-180",
+      viewport,
+      projectPhysicalDirection: adapter.projectPhysicalDirection,
+    });
+
+    expect(guide).toMatchObject({
+      id: "semantic",
+      label: "Horizon guide",
+      editable: false,
+      value: 45,
+      unit: "degrees",
+    });
+    expect(guide!.segments.length).toBeGreaterThan(0);
+    const point = guide!.segments.flat().at(0)!;
+    expect(Math.hypot(point.x - viewport.width / 2, point.y - viewport.height / 2)).toBeCloseTo(100, 3);
+    expect(projectedSpatialAnchorHandleHit(guide!.handle, [guide!])).toBeNull();
   });
 
   test.each([

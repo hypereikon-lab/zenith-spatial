@@ -24,6 +24,44 @@ export type ProjectedSpatialAnchorGuide = {
 /** Backward-compatible name used by the overlay while the UI migrates to multiple anchors. */
 export type ProjectedPhysicalHorizonGuide = ProjectedSpatialAnchorGuide;
 
+/**
+ * Read-only Plate Map overlay for the authored angular semantic horizon. The
+ * guide is projected through the same physical anchor as Dome Stage, but stays
+ * on the editor overlay canvas and can never enter a rendered Plate raster.
+ */
+export function buildSourceMapHorizonOverlayGuide({
+  surface,
+  mode,
+  viewport,
+  projectPhysicalDirection,
+  sampleCount = 180,
+}: {
+  surface: ProjectionSurface;
+  mode: SourceProjectionMode;
+  viewport: Rect;
+  projectPhysicalDirection: (direction: Vec3) => Point2D | null;
+  sampleCount?: number;
+}): ProjectedSpatialAnchorGuide | null {
+  if (surface.kind !== "angular") return null;
+  const anchors = projectionSpatialAnchors(surface);
+  const semanticFirst = mode !== "nadir-180";
+  const domainMinimum = mode === "nadir-180" ? -89.5 : mode === "zenith-230" ? -25 : 0;
+  const domainMaximum = mode === "nadir-180" ? 0 : 89.5;
+  return buildAngularGuide({
+    id: "semantic",
+    label: "Horizon guide",
+    editable: false,
+    status: "authored",
+    elevationDegrees: anchors.semanticElevationDegrees,
+    minimum: semanticFirst ? anchors.horizonElevationDegrees + 0.5 : domainMinimum,
+    maximum: semanticFirst ? domainMaximum : anchors.horizonElevationDegrees - 0.5,
+    viewport,
+    projectPhysicalDirection,
+    sampleCount,
+    handleTargetY: 0.34,
+  });
+}
+
 export function buildProjectedSpatialAnchorGuides({
   surface,
   mode,

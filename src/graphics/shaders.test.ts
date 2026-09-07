@@ -44,6 +44,8 @@ describe("dome projection shader", () => {
       "return physicalDirectionFromSourceKernel(sourceDir, uniforms.rotation, uniforms.domeTilt, uniforms.mirror)",
     );
     expect(domeShaderCode).toContain("uniforms.kernel.physicalHorizon");
+    expect(domeShaderCode).toContain("let semanticPhysical = clamp(uniforms.kernel.physicalSemantic");
+    expect(domeShaderCode).not.toContain("let semanticPhysical = clamp(horizon * 0.5");
     expect(domeShaderCode).toContain("@group(0) @binding(3) var overlayTexture");
   });
 });

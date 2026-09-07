@@ -424,7 +424,7 @@ export const domeProjectionFragment = tgpu
     }
     let thetaMax = max(uniforms.kernel.halfAngle, 0.0001);
     let horizon = uniforms.kernel.physicalHorizon;
-    let semanticPhysical = clamp(horizon * 0.5, 0.0001, max(horizon - 0.0001, 0.0001));
+    let semanticPhysical = clamp(uniforms.kernel.physicalSemantic, 0.0001, max(horizon - 0.0001, 0.0001));
     let centerLine = (1.0 - smoothstep(0.0, 0.022 + fwidth(theta) * 2.0, theta)) * uniforms.showZenith;
     let splitLine = (1.0 - smoothstep(0.002, 0.012 + fwidth(theta) * 2.0, abs(theta - semanticPhysical * thetaMax))) * uniforms.showHorizon;
     let horizonLine = (1.0 - smoothstep(0.002, 0.012 + fwidth(theta) * 2.0, abs(theta - horizon * thetaMax))) * uniforms.showHorizon;

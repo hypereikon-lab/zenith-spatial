@@ -46,6 +46,7 @@ import { renderPlateSketchEditorOverlay } from "../../plates/plate-sketch-editor
 import { createPlateEditorProjectionAdapter } from "../../plates/plate-editor-projection-adapter.js";
 import {
   buildProjectedSpatialAnchorGuides,
+  buildSourceMapHorizonOverlayGuide,
   projectedSpatialAnchorHandleHit,
   type ProjectedSpatialAnchorGuide,
   type ProjectedSpatialAnchorId,
@@ -276,7 +277,6 @@ export function ComposeRoom() {
   ]);
 
   const projectedGuides = useMemo<ProjectedSpatialAnchorGuide[]>(() => {
-    if (viewMode === "source-map") return [];
     const adapter = createPlateEditorProjectionAdapter({
       mode: viewMode,
       sourceProjectionMode: draft.projectionMode,
@@ -287,6 +287,15 @@ export function ComposeRoom() {
       showCaveMask: showCarrierMask,
       projectionSurface: draft.surface,
     });
+    if (viewMode === "source-map") {
+      const horizonGuide = buildSourceMapHorizonOverlayGuide({
+        surface: draft.surface,
+        mode: draft.projectionMode,
+        viewport: { x: 0, y: 0, width: canvasSize.width, height: canvasSize.height },
+        projectPhysicalDirection: adapter.projectPhysicalDirection,
+      });
+      return horizonGuide ? [horizonGuide] : [];
+    }
     return buildProjectedSpatialAnchorGuides({
       surface: draft.surface,
       mode: draft.projectionMode,

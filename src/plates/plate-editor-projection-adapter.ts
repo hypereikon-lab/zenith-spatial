@@ -143,7 +143,10 @@ export function createPlateEditorProjectionAdapter({
           plateEditorCaveProjection(camera, sourceProjectionMode, rect, showCaveMask, projectionSurface, caveViewMode),
         );
       }
-      if (mode === "source-map") return null;
+      // The source-map kernel reverses the authored radial allocation, so a
+      // physical latitude (for example the 45° semantic horizon) lands on the
+      // exact carrier radius used by the corresponding dome-space guide.
+      if (mode === "source-map") return projectSourceDirection(direction);
       return physicalDomeDirectionToScreenPoint(
         direction,
         plateEditorDomeProjection(domeViewMode, camera, sourceProjectionMode, rect, showCaveMask),

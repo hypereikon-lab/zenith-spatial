@@ -30,8 +30,9 @@ describe("plate sketch preview session", () => {
   });
   test("builds preview and handoff options from explicit editor state", () => {
     const input = previewInput();
+    const handoff = buildPlateSketchHandoffOptions(input, 2048);
 
-    expect(buildPlateSketchHandoffOptions(input, 2048)).toMatchObject({
+    expect(handoff).toMatchObject({
       plates: input.plates,
       platePlacements: input.placements,
       plateCount: 1,
@@ -44,6 +45,7 @@ describe("plate sketch preview session", () => {
       sourceProjectionMode: "zenith-180",
       guideMode: "inpaint-handoff",
     });
+    expect(handoff).not.toHaveProperty("projectedGuides");
     expect(buildPlateSketchRenderOptions(input, 768)).toMatchObject({
       width: 768,
       height: 768,

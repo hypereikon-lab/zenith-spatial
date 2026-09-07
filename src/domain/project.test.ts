@@ -28,6 +28,18 @@ describe("Zenith portable domain", () => {
 
     expect(composition.sourceAssetIds).toHaveLength(3);
     expect(composition.plateDraft.frame.plateLayers).toHaveLength(3);
+    expect(
+      composition.plateDraft.frame.plateLayers.map(({ placement }) => ({
+        azimuth: placement.azimuth,
+        radius: placement.radius,
+        scale: placement.scale,
+        spin: placement.spin,
+      })),
+    ).toEqual([
+      { azimuth: 0, radius: 0.5, scale: 1, spin: 0 },
+      { azimuth: 120, radius: 0.5, scale: 1, spin: 0 },
+      { azimuth: -120, radius: 0.5, scale: 1, spin: 0 },
+    ]);
     expect(compositionReadiness(composition)).toMatchObject({
       canCommit: true,
       canGenerate: false,

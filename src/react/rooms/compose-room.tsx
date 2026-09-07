@@ -34,7 +34,13 @@ import {
 import { SOURCE_PROJECTION_MODES, type SourceProjectionMode } from "../../lib/shared/contracts/projection-profile.js";
 import { downloadBlob } from "../../media/canvas-utils.js";
 import { imageFilesFromClipboard } from "../../media/browser-image-files.js";
-import { arrangePlateSketchDefaults, defaultPlateSketchPlacement } from "../../plates/plate-sketch-arrangement.js";
+import { arrangePlateSketchPreset, defaultPlateSketchPlacement } from "../../plates/plate-sketch-arrangement.js";
+import {
+  DEFAULT_PLATE_SKETCH_PRESET_ID,
+  PLATE_SKETCH_PRESET_IDS,
+  PLATE_SKETCH_PRESETS,
+  type PlateSketchPresetId,
+} from "../../plates/default-plate-profile.js";
 import { isFulldomeBundleSize, type FulldomeBundleOrientation } from "../../plates/fulldome-bundle-arrangement.js";
 import {
   beginPlateSketchEditorDrag,
@@ -122,6 +128,7 @@ export function ComposeRoom() {
   const [committing, setCommitting] = useState(false);
   const [bundleDominantLayerId, setBundleDominantLayerId] = useState<string | null>(null);
   const [bundleOrientation, setBundleOrientation] = useState<FulldomeBundleOrientation>("profile");
+  const [plateLayoutPresetId, setPlateLayoutPresetId] = useState<PlateSketchPresetId>(DEFAULT_PLATE_SKETCH_PRESET_ID);
   const [horizonCalibrationKey, setHorizonCalibrationKey] = useState<string | null>(null);
   const canvasStack = useRef<HTMLDivElement>(null);
   const plateInput = useRef<HTMLInputElement>(null);
@@ -1232,6 +1239,19 @@ export function ComposeRoom() {
             <div className="panel-section">
               <h3>Composite</h3>
               <label className="field-row">
+                <span>Layer layout</span>
+                <select
+                  value={plateLayoutPresetId}
+                  onChange={(event) => setPlateLayoutPresetId(event.currentTarget.value as PlateSketchPresetId)}
+                >
+                  {PLATE_SKETCH_PRESET_IDS.map((presetId) => (
+                    <option key={presetId} value={presetId}>
+                      {PLATE_SKETCH_PRESETS[presetId].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-row">
                 <span>Fit</span>
                 <select
                   value={draft.frame.plateFit}
@@ -1262,17 +1282,22 @@ export function ComposeRoom() {
                 className="button ghost full"
                 type="button"
                 onClick={() => {
-                  const arrangement = arrangePlateSketchDefaults(plates);
+                  const arrangement = arrangePlateSketchPreset(plates, plateLayoutPresetId);
                   mutateDraft((next) => {
                     visibleLayers.forEach((layer, index) => {
                       const target = next.frame.plateLayers.find((candidate) => candidate.id === layer.id);
                       if (target && arrangement.placements[index]) target.placement = arrangement.placements[index];
                     });
                   });
+                  setStatus(`${PLATE_SKETCH_PRESETS[plateLayoutPresetId].label} layout applied.`);
                 }}
               >
-                Auto arrange layers
+                Apply layer layout
               </button>
+              <p className="technical-note">
+                Equidistant places three plates at 0°, 120°, and −120° with equal radius and scale. Original Zenith
+                preserves the previous authored default.
+              </p>
             </div>
 
             <CarrierFields

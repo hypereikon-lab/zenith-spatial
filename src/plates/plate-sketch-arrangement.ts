@@ -1,4 +1,9 @@
-import { DEFAULT_ACTIVE_PLATE_INDEX, DEFAULT_PLATE_PLACEMENTS } from "./default-plate-profile.js";
+import {
+  DEFAULT_ACTIVE_PLATE_INDEX,
+  DEFAULT_PLATE_SKETCH_PRESET_ID,
+  PLATE_SKETCH_PRESETS,
+  type PlateSketchPresetId,
+} from "./default-plate-profile.js";
 import { clamp, wrapDegrees } from "../projection.js";
 import { normalizePlatePlacement } from "./plate-placement.js";
 import type { NormalizedPlatePlacement, PlateLike, PlatePlacementInput } from "./plate-placement.js";
@@ -25,17 +30,31 @@ export type PlateSketchArrangement = {
 };
 
 export function arrangePlateSketchDefaults(plates: PlateLike[]): PlateSketchArrangement {
+  return arrangePlateSketchPreset(plates, DEFAULT_PLATE_SKETCH_PRESET_ID);
+}
+
+export function arrangePlateSketchPreset(
+  plates: ReadonlyArray<PlateLike>,
+  presetId: PlateSketchPresetId,
+): PlateSketchArrangement {
+  const preset = PLATE_SKETCH_PRESETS[presetId];
   return {
     placements: plates.map((plate, index) =>
-      normalizePlatePlacement(defaultPlateSketchPlacement(index, plates.length, plate), plate),
+      normalizePlatePlacement(defaultPlateSketchPlacement(index, plates.length, plate, presetId), plate),
     ),
-    activeIndex: plates.length === DEFAULT_PLATE_PLACEMENTS.length ? DEFAULT_ACTIVE_PLATE_INDEX : 0,
+    activeIndex: plates.length === preset.placements.length ? DEFAULT_ACTIVE_PLATE_INDEX : 0,
   };
 }
 
-export function defaultPlateSketchPlacement(index: number, plateCount: number, plate: PlateLike): PlatePlacementInput {
-  if (plateCount === DEFAULT_PLATE_PLACEMENTS.length && DEFAULT_PLATE_PLACEMENTS[index]) {
-    return { ...DEFAULT_PLATE_PLACEMENTS[index] };
+export function defaultPlateSketchPlacement(
+  index: number,
+  plateCount: number,
+  plate: PlateLike,
+  presetId: PlateSketchPresetId = DEFAULT_PLATE_SKETCH_PRESET_ID,
+): PlatePlacementInput {
+  const presetPlacements = PLATE_SKETCH_PRESETS[presetId].placements;
+  if (plateCount === presetPlacements.length && presetPlacements[index]) {
+    return { ...presetPlacements[index] };
   }
   const goldenAngle = 137.507764;
   return {

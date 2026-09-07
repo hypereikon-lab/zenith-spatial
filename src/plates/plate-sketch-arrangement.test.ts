@@ -1,22 +1,47 @@
 import { describe, expect, test } from "vitest";
 import {
   arrangePlateSketchDefaults,
+  arrangePlateSketchPreset,
   countWarpedPlateSketchCorners,
   defaultPlateSketchPlacement,
   serializePlateSketchPlacement,
 } from "./plate-sketch-arrangement.js";
-import { DEFAULT_ACTIVE_PLATE_INDEX, DEFAULT_PLATE_PLACEMENTS } from "./default-plate-profile.js";
+import {
+  DEFAULT_ACTIVE_PLATE_INDEX,
+  DEFAULT_PLATE_PLACEMENTS,
+  EQUIDISTANT_PLATE_PLACEMENTS,
+  ORIGINAL_AUTHORED_PLATE_PLACEMENTS,
+} from "./default-plate-profile.js";
 import { normalizePlatePlacement } from "./plate-placement.js";
 
 describe("plate sketch arrangement", () => {
-  test("uses captured default profile placements when the default plate count matches", () => {
+  test("uses the captured equidistant profile as the three-plate default", () => {
     const plates = DEFAULT_PLATE_PLACEMENTS.map(() => ({ aspect: 1.25 }));
     const arrangement = arrangePlateSketchDefaults(plates);
 
     expect(arrangement.activeIndex).toBe(DEFAULT_ACTIVE_PLATE_INDEX);
     expect(arrangement.placements).toHaveLength(DEFAULT_PLATE_PLACEMENTS.length);
-    expect(arrangement.placements[0].azimuth).toBeCloseTo(DEFAULT_PLATE_PLACEMENTS[0].azimuth);
-    expect(arrangement.placements[0].scale).toBeCloseTo(DEFAULT_PLATE_PLACEMENTS[0].scale);
+    expect(
+      arrangement.placements.map(({ azimuth, radius, scale, spin }) => ({ azimuth, radius, scale, spin })),
+    ).toEqual(
+      EQUIDISTANT_PLATE_PLACEMENTS.map(({ azimuth, radius, scale, spin }) => ({ azimuth, radius, scale, spin })),
+    );
+  });
+
+  test("retains the previous authored layout as a selectable preset", () => {
+    const plates = ORIGINAL_AUTHORED_PLATE_PLACEMENTS.map(() => ({ aspect: 1.25 }));
+    const arrangement = arrangePlateSketchPreset(plates, "original-authored");
+
+    expect(
+      arrangement.placements.map(({ azimuth, radius, scale, spin }) => ({ azimuth, radius, scale, spin })),
+    ).toEqual(
+      ORIGINAL_AUTHORED_PLATE_PLACEMENTS.map(({ azimuth, radius, scale, spin }) => ({
+        azimuth,
+        radius,
+        scale,
+        spin,
+      })),
+    );
   });
 
   test("falls back to golden-angle placement for custom plate counts", () => {

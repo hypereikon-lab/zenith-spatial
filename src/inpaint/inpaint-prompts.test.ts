@@ -8,28 +8,25 @@ import {
 } from "./inpaint-prompts.js";
 
 describe("projection inpaint prompts", () => {
-  it.each([
-    "nadir-180",
-    "cave-270",
-    "hall-double-gable",
-    "cylinder-nadir",
-    "cylinder-zenith",
-  ] as const)("integrates anchored plate content by default for %s", (mode) => {
-    const prompt = inpaintPromptForProjection(mode);
-    expect(prompt).toContain("ZENITH ANCHORED PLATE INTEGRATION CONTRACT v4");
-    expect(prompt).toContain("ANCHORED REGION OF INTENT");
-    expect(prompt).toContain("BOUNDARY PERMEABILITY");
-    expect(prompt).toContain("Harmonize inward into the source plate as well as outward");
-    expect(prompt).toContain("The original plate silhouette");
-    expect(prompt).toContain("literal pixels are not sacred");
-    expect(prompt).toContain("PLACEMENT TOLERANCE");
-    expect(prompt).toContain("FROZEN DIRECTIONAL CARRIER SEGMENTATION — DECODE BEFORE INPAINTING");
-    expect(prompt).toContain("ANCHORED INTEGRATION EXECUTION — FOLLOW IN THIS ORDER");
-    expect(prompt).toContain("INTEGRATE INWARD AND OUTWARD");
-    expect(prompt).toContain("DISSOLVE OLD SILHOUETTES");
-    expect(prompt).toContain("no old bounding box");
-    expect(prompt.length).toBeLessThan(32_000);
-  });
+  it.each(["nadir-180", "cave-270", "hall-double-gable", "cylinder-nadir", "cylinder-zenith"] as const)(
+    "integrates anchored plate content by default for %s",
+    (mode) => {
+      const prompt = inpaintPromptForProjection(mode);
+      expect(prompt).toContain("ZENITH ANCHORED PLATE INTEGRATION CONTRACT v4");
+      expect(prompt).toContain("ANCHORED REGION OF INTENT");
+      expect(prompt).toContain("BOUNDARY PERMEABILITY");
+      expect(prompt).toContain("Harmonize inward into the source plate as well as outward");
+      expect(prompt).toContain("The original plate silhouette");
+      expect(prompt).toContain("literal pixels are not sacred");
+      expect(prompt).toContain("PLACEMENT TOLERANCE");
+      expect(prompt).toContain("FROZEN DIRECTIONAL CARRIER SEGMENTATION — DECODE BEFORE INPAINTING");
+      expect(prompt).toContain("ANCHORED INTEGRATION EXECUTION — FOLLOW IN THIS ORDER");
+      expect(prompt).toContain("INTEGRATE INWARD AND OUTWARD");
+      expect(prompt).toContain("DISSOLVE OLD SILHOUETTES");
+      expect(prompt).toContain("no old bounding box");
+      expect(prompt.length).toBeLessThan(32_000);
+    },
+  );
 
   it.each(["zenith-180", "zenith-230"] as const)(
     "reprojects authored content conservatively into a rotationally symmetric %s domemaster",

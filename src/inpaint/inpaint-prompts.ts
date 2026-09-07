@@ -627,14 +627,14 @@ function sourceAppearanceReferenceClause(
 
   return `SOURCE APPEARANCE REFERENCES — FIDELITY CHECKSUM AND EXTENSION EVIDENCE
 ${references
-    .map(
-      (reference) =>
+  .map(
+    (reference) =>
       `- Image ${reference.referenceOrdinal} / @${reference.tag} is the original unwarped appearance reference for Layer ${reference.layerOrdinal} (${reference.sourceName}, ${reference.width}×${reference.height}). Use it to recover that layer's content identity, material, microstructure, translucency, color relationships, lighting character, detail frequency, and visual medium. ${
         treatment === "adaptive"
           ? "Use it as a fidelity checksum for the exact content already visible in its matching plate and as evidence for extending that content into missing regions. The matching region in @plate_sketch determines its directional neighborhood, prominence, and role. Neither image authorizes inventing a substitute view; only the geometric mapping may change."
           : "Its matching plate footprint in @plate_sketch alone determines where, how large, and with what warp that content belongs."
       }`,
-    )
+  )
   .join("\n")}
 - Read all source references together before deciding what kind of visual world they depict. Preserve their shared aesthetic and degree of abstraction. If they are macro, abstract, liquid, translucent, microscopic, textural, or nonrepresentational, the completed carrier must remain so.
 - The source references are not extra plates, alternate compositions, backgrounds, or permission to restage a conventional photograph. They must not introduce a new subject, viewpoint, landmark, or ecosystem absent from the matching plate. Use them to recover detail and continue beyond an authored boundary, never to replace the plate.
@@ -790,9 +790,10 @@ function adaptiveDomemasterGeometryClause(
   const outputShape = rectangular
     ? `return the authored ${raster.aspectPreset} frame with a true pixel circle whose diameter is the raster's short edge and protected black margins along the long axis; do not stretch it into an ellipse`
     : "return a square image containing one true circular projection disk touching the square's edge midpoints";
-  const edgeMeaning = mode === "zenith-180"
-    ? "the horizon at 90 degrees from zenith lies on the outer circumference"
-    : "the physical horizon direction is remapped to the authored horizon carrier while the outer circle extends 25 degrees below the horizon; the below-horizon annulus retains its normalized radial ordering";
+  const edgeMeaning =
+    mode === "zenith-180"
+      ? "the horizon at 90 degrees from zenith lies on the outer circumference"
+      : "the physical horizon direction is remapped to the authored horizon carrier while the outer circle extends 25 degrees below the horizon; the below-horizon annulus retains its normalized radial ordering";
   return `Projection topology is the invariant: ${outputShape}. It contains one true circular ${fieldOfView}-degree equidistant fisheye, centered exactly in the frame, with identical horizontal and vertical diameter and black only outside the projection circle. The provider may render at its native resolution; normalized polar coordinates, rather than source pixels, define correspondence. The zenith direction is the exact center and ${edgeMeaning}. Use the rotationally symmetric radial law r/R = theta/${fieldOfView / 2} degrees at every azimuth: equal polar angles map to equal radii, so a constant-angle locus is a centered circle and never a horizontal ellipse. Do not crop, offset, mirror, or anisotropically resize the projection disk. ${projectionSurfacePromptClause(surface)} The authored working raster is ${raster.width} × ${raster.height}, but its dimensions describe the normalized guide and do not impose literal pixel registration on the generated output.`;
 }
 

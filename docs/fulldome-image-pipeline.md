@@ -192,6 +192,25 @@ explicitly curated local or Drive material with `sourceKind` and `sceneIds`; the
 `scene_context_reference`, not retroactively presented as ancestors of a plate. Globally repeated bytes are uploaded
 once even when they participate in multiple provenance or conditioning roles.
 
+### Adaptive domemaster reprojection
+
+The default Zenith 180/230 prompt treats the Plate Sketch as a normalized spatial-intent map, not a pixel-registered
+image-edit target. The invariant is the polar carrier: a centered true circle, rotationally symmetric equidistant
+radial sampling, the zenith at the center, the authored azimuthal order, and the correct horizon meaning. Plate
+rectangles, literal pixels, local aspect ratios, precise scale, and exact centers may be repainted or nonlinearly
+reprojected as needed to make the content native to that carrier.
+
+This distinction is intentional. GPT Image may return a provider-native square resolution rather than the Plate
+Sketch raster, so one-to-one `(x,y)` registration is neither achievable nor desirable for this handoff. Asking for
+literal registration also encourages wide source plates to survive as horizontal bands and can turn the zenith field
+into an elliptical aperture. The adaptive contract explicitly rejects axis-dependent stretching, ovalized
+constant-angle features, visible inner rings, and pasted plate silhouettes while preserving the authored vertical
+and azimuthal intention.
+
+The explicit `strict` generation strategy remains available when pixel conservation is genuinely required. Other
+carrier families retain their existing integrated contracts; this adaptive behavior is specific to zenith
+domemasters.
+
 The prepared `zenith.chatgpt-image-handoff.v1` receipt is the source of truth for the browser operation. Codex then:
 
 ```sh

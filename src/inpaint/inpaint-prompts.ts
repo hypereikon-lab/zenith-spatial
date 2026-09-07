@@ -40,6 +40,7 @@ const INPAINT_GUIDE_PROMPT = `Treat the continuous cyan-to-green positional fiel
 const NADIR_INPAINT_GUIDE_PROMPT = `This is a bottom-facing nadir fisheye repair guide, not a zenith dome view. The center of the circle is the downward projection direction directly below the viewer. It does not require literal floor, ground, or terrain; continue the source-derived visual medium there. Do not reinterpret it as sky, clouds, sun, ceiling, treetops, or overhead canopy. ${INPAINT_GUIDE_PROMPT}`;
 const HALL_CARRIER_EDIT_MARKER = "ZENITH HALL CARRIER EDIT";
 const INTEGRATED_PLATE_EDIT_MARKER = "ZENITH ANCHORED PLATE INTEGRATION CONTRACT v4";
+const ADAPTIVE_DOMEMASTER_EDIT_MARKER = "ZENITH ADAPTIVE DOMEMASTER REPROJECTION CONTRACT v1";
 const PIXEL_LOCK_EDIT_MARKER = "ZENITH MASKED SEMANTIC INPAINT CONTRACT v3";
 
 export const PLATE_INTEGRATION_MODES = ["integrated", "strict"] as const;
@@ -72,6 +73,7 @@ const OBSOLETE_GENERATED_INPAINT_PROMPT_MARKERS = [
   "equidistant 270 fulldome map with the nadir at the center",
   "exact square domemaster composition handoff for inpaint",
   "exact square CAVE 270 source-map guide",
+  "ZENITH ANCHORED PLATE INTEGRATION CONTRACT v4",
   "black square bands and spokes",
   "coherent continuation of the same flat source texture",
   "Do not create visible room corners",
@@ -228,6 +230,9 @@ function zenith180InpaintPrompt(
   geometry = normalizePromptGeometry("zenith-180"),
   plateIntegrationMode: PlateIntegrationMode = DEFAULT_PLATE_INTEGRATION_MODE,
 ): string {
+  if (plateIntegrationMode === "integrated") {
+    return `Use @plate_sketch as a normalized spatial-intent map for one equidistant 180 fulldome map, not as a pixel-registered bitmap to copy. ${adaptiveDomemasterGeometryClause(geometry, "zenith-180")} ${plateTreatmentClause(geometry, "zenith-180", plateIntegrationMode, domeGuideSemanticSplit)} ${domeGuidePromptClause("zenith-180", domeGuideSemanticSplit)} ${INPAINT_GUIDE_PROMPT} Complete every missing region as a coherent continuation of the source-derived visual world and medium. No visible cyan/blue guide patches, green patches, mask edges, checkerboards, dividers, radial spokes, central holes, pasted crop boundaries, elliptical apertures, ovalized projection features, or repair boundaries. Output one clean opaque square equidistant 180-degree domemaster.`;
+  }
   return `Use @plate_sketch as the exact projection-source guide. It is an equidistant 180 fulldome map with the zenith at the center and the horizon at the outer circle. ${projectionAuthoringClause(geometry, "zenith-180")} ${plateTreatmentClause(geometry, "zenith-180", plateIntegrationMode, domeGuideSemanticSplit)} Preserve the authored plate subjects, placement, orientation, scale envelope, and fisheye geometry while integrating them into one image. ${domeGuidePromptClause("zenith-180", domeGuideSemanticSplit)} ${INPAINT_GUIDE_PROMPT} Complete missing regions as a coherent continuation of the source-derived visual world and medium. No visible cyan/blue guide patches, green patches, mask edges, checkerboards, dividers, radial spokes, central holes, pasted crop boundaries, or repair boundaries. Output one clean opaque domemaster at the exact raster contract.`;
 }
 
@@ -237,6 +242,9 @@ function zenith230InpaintPrompt(
   geometry = normalizePromptGeometry("zenith-230"),
   plateIntegrationMode: PlateIntegrationMode = DEFAULT_PLATE_INTEGRATION_MODE,
 ): string {
+  if (plateIntegrationMode === "integrated") {
+    return `Use @plate_sketch as a normalized spatial-intent map for one equidistant 230 fulldome map, not as a pixel-registered bitmap to copy. ${adaptiveDomemasterGeometryClause(geometry, "zenith-230")} ${plateTreatmentClause(geometry, "zenith-230", plateIntegrationMode, domeGuideSemanticSplit, domeGuideHorizonSplit)} ${domeGuidePromptClause("zenith-230", domeGuideSemanticSplit, domeGuideHorizonSplit)} ${INPAINT_GUIDE_PROMPT} Complete every missing region as a coherent continuation of the source-derived visual world across the horizon transition. No visible cyan/blue guide patches, green patches, mask edges, checkerboards, dividers, radial spokes, central holes, pasted crop boundaries, elliptical apertures, ovalized projection features, or repair boundaries. Output one clean opaque square equidistant 230-degree domemaster.`;
+  }
   return `Use @plate_sketch as the exact projection-source guide. It is an equidistant 230 fulldome map with the zenith at the center, the physical horizon direction remapped to the editable source-map horizon carrier, and the outer circle extending 25 degrees below the horizon. ${projectionAuthoringClause(geometry, "zenith-230")} ${plateTreatmentClause(geometry, "zenith-230", plateIntegrationMode, domeGuideSemanticSplit, domeGuideHorizonSplit)} Preserve the authored plate subjects, placement, orientation, scale envelope, and fisheye geometry while integrating them into one image. ${domeGuidePromptClause("zenith-230", domeGuideSemanticSplit, domeGuideHorizonSplit)} ${INPAINT_GUIDE_PROMPT} Complete missing regions as a coherent continuation of the source-derived visual world across the horizon transition. No visible cyan/blue guide patches, green patches, mask edges, checkerboards, dividers, radial spokes, central holes, pasted crop boundaries, or repair boundaries. Output one clean opaque zenith 230 domemaster at the exact raster contract.`;
 }
 
@@ -430,10 +438,51 @@ function plateTreatmentClause(
   if (plateIntegrationMode === "strict") {
     return plateStrictPixelLockClause(geometry, mode, guideSplit, horizonSplit);
   }
+  if (mode === "zenith-180" || mode === "zenith-230") {
+    return adaptiveDomemasterReprojectionClause(geometry, mode, guideSplit, horizonSplit);
+  }
   if (mode === "cylinder-wall") {
     return cylinderWallIntegratedPreservationClause(geometry, guideSplit, horizonSplit);
   }
   return plateIntegratedPreservationClause(geometry, mode, guideSplit, horizonSplit);
+}
+
+function adaptiveDomemasterReprojectionClause(
+  { raster, frame }: InpaintProjectionPromptGeometry,
+  mode: "zenith-180" | "zenith-230",
+  guideSplit?: number | string | null,
+  horizonSplit?: number | string | null,
+): string {
+  const layers = (frame?.plateLayers || [])
+    .filter((layer) => layer.visible !== false && layer.placement.opacity > 0)
+    .sort((a, b) => a.index - b.index);
+  const ledger = layers.length
+    ? `\nSPATIAL-INTENT LEDGER — ${layers.length} visible authored layer${layers.length === 1 ? "" : "s"}\n${layers
+        .map((layer, index) => plateLayerLedgerLine(layer, index, mode, raster, guideSplit, horizonSplit, "integrated"))
+        .join("\n")}`
+    : "";
+  const sourceReferences = sourceAppearanceReferenceClause(frame, "adaptive");
+
+  return `${ADAPTIVE_DOMEMASTER_EDIT_MARKER}
+- Image 1 / @plate_sketch specifies scene membership, approximate azimuthal neighborhoods, vertical intent, relative prominence, and the exact fulldome coordinate topology. It is a spatial storyboard, not an instruction to retain literal source pixels, rectangular proportions, or one-to-one input/output coordinates.
+${sourceReferences}
+- Preserve the recognizable visual world, principal material or subject identities, relative ordering, dominant-versus-secondary relationship, and the authored zenith-to-horizon trajectory. Preserve these as semantic and spatial intentions, not as fixed bitmap geometry.${ledger}
+- REPROJECT, DO NOT PASTE: freely repaint, bend, compress, expand, occlude, resynthesize, and nonlinearly warp the plate content as required to make it native to the spherical fisheye field. A wide rectangular source must be distributed over polar angle and azimuth; never preserve its horizontal width by stretching the finished dome along the X axis.
+- The plate rectangles, crop silhouettes, local aspect ratios, literal pixels, exact scale values, and precise centers are expendable. They may move within their intended directional neighborhoods whenever that is necessary for a physically coherent domemaster. The carrier center, circular rim, azimuthal order, and zenith/horizon meanings are not expendable.
+- The zenith is one direction at one exact point in the image center—not a circular opening, eye, portal, skylight, hole, or elliptical aperture. The colored semantic transition is a smooth directional allocation, not a visible ring or scene boundary.
+- Build one continuous camera and one continuous surrounding environment. Reconcile perspective, depth, lighting, texture scale, and organic structure globally rather than preserving incompatible plate perspectives.
+
+${semanticSegmentationClause(mode, guideSplit, horizonSplit, "integrated")}
+
+ADAPTIVE REPROJECTION PROCEDURE
+1. Decode the guide as normalized polar coordinates and identify only the scene content and spatial roles carried by each plate.
+2. Establish a rotationally symmetric equidistant fisheye field before placing scene detail.
+3. Reproject each plate's visual evidence into that field, allowing whatever local deformation is required by its polar position.
+4. Synthesize through every former crop boundary and through the colored guide field until the result is one continuous environment.
+5. Verify radial geometry independently of photographic resemblance: the center remains the zenith point, the rim remains a true circle, and equal polar angles occupy equal radial distances in every azimuth.
+6. Reject and reconstruct any result whose central field becomes a horizontal oval, whose optical scale differs between horizontal and vertical axes, or whose plate rectangles remain perceptible.
+
+Return only the finished domemaster. Do not output guides, masks, coordinates, labels, intermediate stages, or a perspective preview.`;
 }
 
 function cylinderWallIntegratedPreservationClause(
@@ -562,7 +611,10 @@ ANCHORED INTEGRATION EXECUTION — FOLLOW IN THIS ORDER
 Do not output masks, labels, coordinates, guide colors, or intermediate passes. Return only the finished carrier image.`;
 }
 
-function sourceAppearanceReferenceClause(frame: DomeSceneFrame0 | undefined): string {
+function sourceAppearanceReferenceClause(
+  frame: DomeSceneFrame0 | undefined,
+  treatment: "anchored" | "adaptive" = "anchored",
+): string {
   const references = inpaintSourceReferenceDescriptors(frame);
   if (references.length === 0) {
     return `SOURCE APPEARANCE AUTHORITY
@@ -571,10 +623,14 @@ function sourceAppearanceReferenceClause(frame: DomeSceneFrame0 | undefined): st
 
   return `SOURCE APPEARANCE REFERENCES — CONTENT AUTHORITY, NEVER POSITION AUTHORITY
 ${references
-  .map(
-    (reference) =>
-      `- Image ${reference.referenceOrdinal} / @${reference.tag} is the original unwarped appearance reference for Layer ${reference.layerOrdinal} (${reference.sourceName}, ${reference.width}×${reference.height}). Use it to recover that layer's content identity, material, microstructure, translucency, color relationships, lighting character, detail frequency, and visual medium. Its matching plate footprint in @plate_sketch alone determines where, how large, and with what warp that content belongs.`,
-  )
+    .map(
+      (reference) =>
+      `- Image ${reference.referenceOrdinal} / @${reference.tag} is the original unwarped appearance reference for Layer ${reference.layerOrdinal} (${reference.sourceName}, ${reference.width}×${reference.height}). Use it to recover that layer's content identity, material, microstructure, translucency, color relationships, lighting character, detail frequency, and visual medium. ${
+        treatment === "adaptive"
+          ? "Its matching region in @plate_sketch determines its intended directional neighborhood, relative prominence, and compositional role, but does not lock literal pixels, rectangular proportions, scale, or warp."
+          : "Its matching plate footprint in @plate_sketch alone determines where, how large, and with what warp that content belongs."
+      }`,
+    )
   .join("\n")}
 - Read all source references together before deciding what kind of visual world they depict. Preserve their shared aesthetic and degree of abstraction. If they are macro, abstract, liquid, translucent, microscopic, textural, or nonrepresentational, the completed carrier must remain so.
 - The source references are not extra plates, alternate compositions, backgrounds, or permission to restage a conventional photograph. Do not copy their original square framing into the output and do not place them anywhere except the authored neighborhoods shown in @plate_sketch.
@@ -719,6 +775,21 @@ function guideTonePrompt(tone: SourceGuideZone["tone"]): string {
 
 function formatAspect(value: number): string {
   return Number.isFinite(value) && value > 0 ? Number(value.toFixed(3)).toString() : "unknown aspect";
+}
+
+function adaptiveDomemasterGeometryClause(
+  { raster, surface }: InpaintProjectionPromptGeometry,
+  mode: "zenith-180" | "zenith-230",
+): string {
+  const fieldOfView = mode === "zenith-180" ? 180 : 230;
+  const rectangular = Math.abs(raster.width / raster.height - 1) > 0.001;
+  const outputShape = rectangular
+    ? `return the authored ${raster.aspectPreset} frame with a true pixel circle whose diameter is the raster's short edge and protected black margins along the long axis; do not stretch it into an ellipse`
+    : "return a square image containing one true circular projection disk touching the square's edge midpoints";
+  const edgeMeaning = mode === "zenith-180"
+    ? "the horizon at 90 degrees from zenith lies on the outer circumference"
+    : "the physical horizon direction is remapped to the authored horizon carrier while the outer circle extends 25 degrees below the horizon; the below-horizon annulus retains its normalized radial ordering";
+  return `Projection topology is the invariant: ${outputShape}. It contains one true circular ${fieldOfView}-degree equidistant fisheye, centered exactly in the frame, with identical horizontal and vertical diameter and black only outside the projection circle. The provider may render at its native resolution; normalized polar coordinates, rather than source pixels, define correspondence. The zenith direction is the exact center and ${edgeMeaning}. Use the rotationally symmetric radial law r/R = theta/${fieldOfView / 2} degrees at every azimuth: equal polar angles map to equal radii, so a constant-angle locus is a centered circle and never a horizontal ellipse. Do not crop, offset, mirror, or anisotropically resize the projection disk. ${projectionSurfacePromptClause(surface)} The authored working raster is ${raster.width} × ${raster.height}, but its dimensions describe the normalized guide and do not impose literal pixel registration on the generated output.`;
 }
 
 function projectionAuthoringClause(

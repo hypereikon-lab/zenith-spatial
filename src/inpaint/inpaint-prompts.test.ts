@@ -9,8 +9,6 @@ import {
 
 describe("projection inpaint prompts", () => {
   it.each([
-    "zenith-180",
-    "zenith-230",
     "nadir-180",
     "cave-270",
     "hall-double-gable",
@@ -32,6 +30,24 @@ describe("projection inpaint prompts", () => {
     expect(prompt).toContain("no old bounding box");
     expect(prompt.length).toBeLessThan(32_000);
   });
+
+  it.each(["zenith-180", "zenith-230"] as const)(
+    "adaptively reprojects authored intent into a rotationally symmetric %s domemaster",
+    (mode) => {
+      const prompt = inpaintPromptForProjection(mode);
+      expect(prompt).toContain("ZENITH ADAPTIVE DOMEMASTER REPROJECTION CONTRACT v1");
+      expect(prompt).toContain("normalized spatial-intent map");
+      expect(prompt).toContain("not as a pixel-registered bitmap to copy");
+      expect(prompt).toContain("REPROJECT, DO NOT PASTE");
+      expect(prompt).toContain("r/R = theta/");
+      expect(prompt).toContain("constant-angle locus is a centered circle and never a horizontal ellipse");
+      expect(prompt).toContain("The zenith is one direction at one exact point");
+      expect(prompt).toContain("central field becomes a horizontal oval");
+      expect(prompt).not.toContain("output (x,y) is the same carrier address as input (x,y)");
+      expect(prompt).not.toContain("PLACEMENT TOLERANCE");
+      expect(prompt.length).toBeLessThan(32_000);
+    },
+  );
 
   it("retains strict pixel copy-through as an explicit archival strategy", () => {
     const prompt = inpaintPromptForProjection("zenith-230", undefined, undefined, undefined, "strict");
@@ -183,7 +199,8 @@ describe("projection inpaint prompts", () => {
     expect(prompt).toContain("Image 2 / @source_1 is the original unwarped appearance reference for Layer 1");
     expect(prompt).toContain("Image 3 / @source_2 is the original unwarped appearance reference for Layer 2");
     expect(prompt).toContain("macro-a.webp, 700×700");
-    expect(prompt).toContain("@plate_sketch alone determines where, how large, and with what warp");
+    expect(prompt).toContain("matching region in @plate_sketch determines its intended directional neighborhood");
+    expect(prompt).toContain("does not lock literal pixels, rectangular proportions, scale, or warp");
     expect(prompt).toContain("If they are macro, abstract, liquid, translucent");
     expect(prompt).toContain("Never reinterpret ambiguous green, blue, reflective, organic, or glass-like matter");
     expect(prompt).toContain("This label encodes geometry only and supplies no subject matter");
@@ -210,7 +227,7 @@ describe("projection inpaint prompts", () => {
       frame: scene.frame0,
     });
 
-    expect(prompt).toContain("ZENITH ANCHORED PLATE INTEGRATION CONTRACT v4");
+    expect(prompt).toContain("ZENITH ADAPTIVE DOMEMASTER REPROJECTION CONTRACT v1");
     expect(prompt).toContain("ARTIST DIRECTION — SUBJECT, MATERIAL, ATMOSPHERE, AND CONTINUITY");
     expect(prompt).toContain("Keep the flowers sparse and pale.");
   });
@@ -354,7 +371,7 @@ describe("projection inpaint prompts", () => {
 
   it("describes zenith 230 as a 25-degree below-horizon extension", () => {
     expect(inpaintPromptForProjection("zenith-230")).toContain("equidistant 230 fulldome map");
-    expect(inpaintPromptForProjection("zenith-230")).toContain("physical horizon direction remapped");
+    expect(inpaintPromptForProjection("zenith-230")).toContain("physical horizon direction is remapped");
     expect(inpaintPromptForProjection("zenith-230", 1 / 3, 0.7)).toContain("second guide boundary at 70%");
     expect(inpaintPromptForProjection("zenith-230")).toContain("25 degrees below the horizon");
   });
